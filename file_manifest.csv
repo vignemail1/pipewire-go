@@ -1,0 +1,50 @@
+Package,File,Type,Status,Size,Description
+root,go.mod,config,created,,
+root,go.sum,config,generated,,
+root,Makefile,build,created,,
+root,.gitignore,config,created,,
+root,LICENSE,doc,created,,
+root,README.md,doc,created,4500 lines,
+root,ARCHITECTURE.md,doc,created,600 lines,
+root,IMPLEMENTATION_GUIDE.md,doc,created,500 lines,
+root,CONTRIBUTING.md,doc,created,400 lines,
+root,DELIVERABLES.md,doc,created,,
+root,QUICKSTART.md,doc,created,,
+root,MANIFEST.json,meta,created,,
+spa,pod.go,code,created,400 lines,
+spa,types.go,code,todo,,POD type constants and enums
+spa,audio.go,code,todo,,Audio format POD types
+spa,pod_test.go,test,todo,,Unit tests for POD parser/builder
+spa,README.md,doc,created,,
+core,connection.go,code,created,350 lines,
+core,protocol.go,code,todo,,Protocol message types and marshalling
+core,types.go,code,todo,,Core protocol types
+core,errors.go,code,todo,,Protocol error types
+core,connection_test.go,test,todo,,Unit tests for connection handling
+core,README.md,doc,created,,
+client,client.go,code,created,,
+client,core.go,code,todo,,
+client,registry.go,code,todo,,
+client,node.go,code,todo,,
+client,port.go,code,todo,,
+client,link.go,code,todo,,
+client,types.go,code,todo,,Common client types and enums
+client,properties.go,code,todo,,Property handling utilities
+client,client_test.go,test,todo,,
+client,README.md,doc,created,,
+verbose,logger.go,code,created,350 lines,
+verbose,dumper.go,code,todo,,Advanced binary and POD dumping
+verbose,logger_test.go,test,todo,,
+verbose,README.md,doc,created,,
+examples,basic_connect.go,example,created,,Basic connection and POD testing
+examples,list_devices.go,example,todo,,List all audio devices
+examples,audio_routing.go,example,todo,,Create and manage audio links
+examples,monitor.go,example,todo,,Monitor graph changes in realtime
+cmd/pw-tui,main.go,code,todo,,TUI client entry point
+cmd/pw-tui,graph.go,code,todo,,Graph visualization
+cmd/pw-tui,routing.go,code,todo,,Interactive routing
+cmd/pw-tui,README.md,doc,todo,,
+cmd/pw-gui,main.go,code,todo,,GUI client entry point (GTK)
+cmd/pw-gui,graph.go,code,todo,,Graph widget
+cmd/pw-gui,routing.go,code,todo,,Routing interface
+cmd/pw-gui,README.md,doc,todo,,

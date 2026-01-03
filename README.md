@@ -4,6 +4,8 @@ Librairie Go pure pour interagir avec PipeWire via socket Unix, sans CGO, avec a
 
 Ce projet a été totalement vibe codé avec Perplexity Labs.
 
+/!\ Projet en cours de développement /!\, il n'a pas encore été testé
+
 ## Table des matières
 
 - [Objectives](#objectives)

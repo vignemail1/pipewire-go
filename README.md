@@ -33,7 +33,7 @@ Cette librairie offre :
 
 ### Structure Modulaire
 
-```
+```text
 pipewire-go/
 ├── core/              # Logique centrale du protocole
 │   ├── connection.go  # Gestion socket Unix

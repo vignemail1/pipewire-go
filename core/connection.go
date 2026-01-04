@@ -13,7 +13,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/yourusername/pipewire-go/verbose"
+	"github.com/vignemail1/pipewire-go/verbose"
 )
 
 // ProtocolVersion defines the protocol version

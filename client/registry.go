@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/yourusername/pipewire-go/core"
-	"github.com/yourusername/pipewire-go/verbose"
+	"github.com/vignemail1/pipewire-go/core"
+	"github.com/vignemail1/pipewire-go/verbose"
 )
 
 // Core represents the PipeWire Core object (id=0)

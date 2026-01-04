@@ -9,7 +9,7 @@ import (
 	"math"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yourusername/pipewire-go/client"
+	"github.com/vignemail1/pipewire-go/client"
 )
 
 // GraphVisualizer handles audio graph visualization

@@ -11,8 +11,8 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/yourusername/pipewire-go/client"
-	"github.com/yourusername/pipewire-go/verbose"
+	"github.com/vignemail1/pipewire-go/client"
+	"github.com/vignemail1/pipewire-go/verbose"
 )
 
 // Model represents the TUI application state

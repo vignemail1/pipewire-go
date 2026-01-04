@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/yourusername/pipewire-go/client"
-	"github.com/yourusername/pipewire-go/core"
+	"github.com/vignemail1/pipewire-go/client"
+	"github.com/vignemail1/pipewire-go/core"
 )
 
 // RoutingManager handles audio routing operations

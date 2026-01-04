@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yourusername/pipewire-go/client"
+	"github.com/vignemail1/pipewire-go/client"
 )
 
 // GraphRenderer handles rendering of the audio graph

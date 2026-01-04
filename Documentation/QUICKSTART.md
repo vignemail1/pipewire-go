@@ -146,6 +146,7 @@ func (c *Client) ChangeRoute(from *Node, to *Node) error
 ```
 
 ### Testing Strategy
+
 ```bash
 # Pour chaque nouveau module:
 go test ./client -v
@@ -156,6 +157,7 @@ go test ./client -cover
 ```
 
 ### Documentation
+
 ```bash
 # Après chaque module:
 godoc -http=:6060

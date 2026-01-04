@@ -12,25 +12,26 @@
 
 ## 📊 COMPREHENSIVE PROJECT STATISTICS
 
-| Metric | Value |
-|--------|-------|
-| **Total Artifacts** | 78 |
-| **Go Source Files** | 30+ |
-| **Documentation Files** | 15+ |
-| **Configuration Files** | 5 |
-| **Example Programs** | 4 |
-| **Total Lines of Code** | 7500+ |
-| **Total Lines of Documentation** | 4000+ |
-| **Project Total** | 11,500+ lines |
-| **External Dependencies** | 2 (bubbletea, gotk4) |
-| **Phases Complete** | 5 ✅ |
-| **Production Ready** | YES ⭐⭐⭐⭐⭐ |
+| Metric                           | Value                |
+| -------------------------------- | -------------------- |
+| **Total Artifacts**              | 78                   |
+| **Go Source Files**              | 30+                  |
+| **Documentation Files**          | 15+                  |
+| **Configuration Files**          | 5                    |
+| **Example Programs**             | 4                    |
+| **Total Lines of Code**          | 7500+                |
+| **Total Lines of Documentation** | 4000+                |
+| **Project Total**                | 11,500+ lines        |
+| **External Dependencies**        | 2 (bubbletea, gotk4) |
+| **Phases Complete**              | 5 ✅                  |
+| **Production Ready**             | YES ⭐⭐⭐⭐⭐            |
 
 ---
 
 ## 🗂️ COMPLETE FILE LISTING
 
 ### ROOT FILES
+
 ```
 pipewire-go/
 ├── go.mod                          ✅ Module definition
@@ -43,6 +44,7 @@ pipewire-go/
 ### PACKAGES
 
 #### spa/ - Simple Protocol Audio (1150+ lines)
+
 ```
 spa/
 ├── pod.go                          ✅ Phase 1 - POD marshaling
@@ -51,6 +53,7 @@ spa/
 ```
 
 #### core/ - Protocol & Connection (1050+ lines)
+
 ```
 core/
 ├── connection.go                   ✅ Phase 1 - Socket connection
@@ -60,6 +63,7 @@ core/
 ```
 
 #### client/ - High-Level API (1900+ lines)
+
 ```
 client/
 ├── types.go                        ✅ Phase 2 - Type definitions
@@ -72,12 +76,14 @@ client/
 ```
 
 #### verbose/ - Logging (350+ lines)
+
 ```
 verbose/
 └── logger.go                       ✅ Phase 1 - Structured logging
 ```
 
 #### examples/ - Working Examples (700+ lines)
+
 ```
 examples/
 ├── basic_connect.go                ✅ Phase 1 - Basic usage
@@ -89,6 +95,7 @@ examples/
 ### APPLICATIONS
 
 #### cmd/pw-tui/ - Terminal UI (1730+ lines)
+
 ```
 cmd/pw-tui/
 ├── main.go                         ✅ Phase 4 - TUI application (280+ lines)
@@ -99,6 +106,7 @@ cmd/pw-tui/
 ```
 
 #### cmd/pw-gui/ - GUI Application (1250+ lines)
+
 ```
 cmd/pw-gui/
 ├── main.go                         ✅ Phase 5 - GUI application (400+ lines)
@@ -316,24 +324,24 @@ cd cmd/pw-gui && go run main.go
 ## 📊 CODE METRICS
 
 ### By Package
-| Package | Lines | Files | Status |
-|---------|-------|-------|--------|
-| **spa/** | 1150+ | 3 | ✅ |
-| **core/** | 1050+ | 4 | ✅ |
-| **client/** | 1900+ | 7 | ✅ |
-| **verbose/** | 350+ | 1 | ✅ |
-| **examples/** | 700+ | 4 | ✅ |
-| **cmd/pw-tui/** | 1730+ | 5 | ✅ |
-| **cmd/pw-gui/** | 1250+ | 3 | ✅ |
-| **TOTAL** | **9130+** | **27** | ✅ |
+| Package         | Lines     | Files  | Status |
+| --------------- | --------- | ------ | ------ |
+| **spa/**        | 1150+     | 3      | ✅      |
+| **core/**       | 1050+     | 4      | ✅      |
+| **client/**     | 1900+     | 7      | ✅      |
+| **verbose/**    | 350+      | 1      | ✅      |
+| **examples/**   | 700+      | 4      | ✅      |
+| **cmd/pw-tui/** | 1730+     | 5      | ✅      |
+| **cmd/pw-gui/** | 1250+     | 3      | ✅      |
+| **TOTAL**       | **9130+** | **27** | ✅      |
 
 ### By Type
-| Type | Count |
-|------|-------|
-| **Go Files** | 27 |
-| **Documentation Files** | 15 |
-| **Configuration Files** | 5 |
-| **Total Files** | 47 |
+| Type                    | Count |
+| ----------------------- | ----- |
+| **Go Files**            | 27    |
+| **Documentation Files** | 15    |
+| **Configuration Files** | 5     |
+| **Total Files**         | 47    |
 
 ---
 
@@ -377,15 +385,15 @@ cd cmd/pw-gui && go run main.go
 
 ## 📚 DOCUMENTATION COVERAGE
 
-| Document | Type | Status |
-|----------|------|--------|
-| README.md | Overview | ✅ Complete |
-| ARCHITECTURE.md | Design | ✅ Complete |
-| QUICKSTART.md | Tutorial | ✅ Complete |
-| IMPLEMENTATION_GUIDE.md | Guide | ✅ Complete |
-| PHASE4_COMPLETE.md | Reference | ✅ Complete |
-| PHASE5_COMPLETE.md | Reference | ✅ Complete |
-| Inline Comments | Code | ✅ Extensive |
+| Document                | Type      | Status      |
+| ----------------------- | --------- | ----------- |
+| README.md               | Overview  | ✅ Complete  |
+| ARCHITECTURE.md         | Design    | ✅ Complete  |
+| QUICKSTART.md           | Tutorial  | ✅ Complete  |
+| IMPLEMENTATION_GUIDE.md | Guide     | ✅ Complete  |
+| PHASE4_COMPLETE.md      | Reference | ✅ Complete  |
+| PHASE5_COMPLETE.md      | Reference | ✅ Complete  |
+| Inline Comments         | Code      | ✅ Extensive |
 
 ---
 

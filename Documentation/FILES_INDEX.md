@@ -100,26 +100,26 @@
 
 ## 🎯 TOTAL CRÉÉ CETTE SESSION
 
-| Catégorie | Phase 1 | Phase 2 | Total |
-|-----------|---------|---------|-------|
-| **Code Go** | 4 fichiers | 7 fichiers | 11 fichiers |
-| **Exemples** | 1 fichier | 3 fichiers | 4 fichiers |
-| **Documentation** | 6 fichiers | 1 fichier | 7 fichiers |
-| **Configuration** | 5 fichiers | - | 5 fichiers |
-| **Métadonnées** | 4 fichiers | - | 4 fichiers |
-| **TOTAL** | **20 fichiers** | **11 fichiers** | **31 fichiers** |
+| Catégorie         | Phase 1         | Phase 2         | Total           |
+| ----------------- | --------------- | --------------- | --------------- |
+| **Code Go**       | 4 fichiers      | 7 fichiers      | 11 fichiers     |
+| **Exemples**      | 1 fichier       | 3 fichiers      | 4 fichiers      |
+| **Documentation** | 6 fichiers      | 1 fichier       | 7 fichiers      |
+| **Configuration** | 5 fichiers      | -               | 5 fichiers      |
+| **Métadonnées**   | 4 fichiers      | -               | 4 fichiers      |
+| **TOTAL**         | **20 fichiers** | **11 fichiers** | **31 fichiers** |
 
 ---
 
 ## 📊 LIGNES DE CODE
 
-| Composant | Lignes | Type |
-|-----------|--------|------|
-| Phase 1 Code | 1200+ | Go |
-| Phase 2 Code | 1300+ | Go |
-| Phase 1 Docs | 2500+ | Markdown |
-| Phase 2 Examples | 750+ | Go |
-| **TOTAL** | **5800+** | **Code + Docs** |
+| Composant        | Lignes    | Type            |
+| ---------------- | --------- | --------------- |
+| Phase 1 Code     | 1200+     | Go              |
+| Phase 2 Code     | 1300+     | Go              |
+| Phase 1 Docs     | 2500+     | Markdown        |
+| Phase 2 Examples | 750+      | Go              |
+| **TOTAL**        | **5800+** | **Code + Docs** |
 
 ---
 
@@ -171,6 +171,7 @@ pipewire-go/
 ## 🔍 DÉTAIL: FICHIERS À TÉLÉCHARGER & COPIER
 
 ### Pour Phase 1 (déjà créé, à télécharger):
+
 ```bash
 # Root
 README.md                    → pipewire-go/README.md
@@ -196,6 +197,7 @@ example_basic_connect.go     → pipewire-go/examples/basic_connect.go
 ```
 
 ### Pour Phase 2 (NOUVEAU, à télécharger):
+
 ```bash
 # Client package (NOUVEAU)
 client_types.go              → pipewire-go/client/types.go

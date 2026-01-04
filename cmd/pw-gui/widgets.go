@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yourusername/pipewire-go/client"
+	"github.com/vignemail1/pipewire-go/client"
 )
 
 // DeviceListWidget represents a list of audio devices

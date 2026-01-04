@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/yourusername/pipewire-go/core"
-	"github.com/yourusername/pipewire-go/verbose"
+	"github.com/vignemail1/pipewire-go/core"
+	"github.com/vignemail1/pipewire-go/verbose"
 )
 
 // Node represents a PipeWire audio/video node

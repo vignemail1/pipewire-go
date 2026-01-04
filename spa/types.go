@@ -1,414 +1,413 @@
-// Package spa - Simple Protocol Audio
+// Package spa - Type definitions and constants
 // spa/types.go
-// POD type definitions and implementations
-// Phase 3 - Complete type system
+// Complete POD type definitions, enums, and utility functions
 
 package spa
 
-import "fmt"
-
-// PODTypeID represents the type identifier for POD values
-// NOTE: PODValue and PODType interfaces are defined in pod.go
-type PODTypeID int
-
-// POD Type IDs
-const (
-	PODTypeIDNone    PODTypeID = 0
-	PODTypeIDNull    PODTypeID = 1
-	PODTypeIDBool    PODTypeID = 2
-	PODTypeIDInt     PODTypeID = 3
-	PODTypeIDLong    PODTypeID = 4
-	PODTypeIDFloat   PODTypeID = 5
-	PODTypeIDDouble  PODTypeID = 6
-	PODTypeIDString  PODTypeID = 7
-	PODTypeIDBytes   PODTypeID = 8
-	PODTypeIDArray   PODTypeID = 9
-	PODTypeIDStruct  PODTypeID = 10
-	PODTypeIDObject  PODTypeID = 11
-	PODTypeIDChoice  PODTypeID = 12
+import (
+	"encoding/json"
+	"fmt"
 )
 
-// ChoiceType represents choice constraint type
+// ===== POD Type Constants =====
+
+const (
+	PODTypeInvalid   uint32 = 0
+	PODTypeNone      uint32 = 1
+	PODTypeBool      uint32 = 2
+	PODTypeInt       uint32 = 3
+	PODTypeInt64     uint32 = 4
+	PODTypeUint32    uint32 = 5
+	PODTypeString    uint32 = 6
+	PODTypeBytes     uint32 = 7
+	PODTypeFd        uint32 = 8
+	PODTypeArray     uint32 = 9
+	PODTypeObject    uint32 = 10
+	PODTypeFraction  uint32 = 11
+	PODTypeRectangle uint32 = 12
+	PODTypeID        uint32 = 13
+)
+
+// ===== Choice Type =====
+
 type ChoiceType int
 
 const (
-	ChoiceTypeNone  ChoiceType = 0
-	ChoiceTypeRange ChoiceType = 1
-	ChoiceTypeEnum  ChoiceType = 2
-	ChoiceTypeFlags ChoiceType = 3
-	ChoiceTypeStep  ChoiceType = 4
+	ChoiceTypeEnum ChoiceType = iota
+	ChoiceTypeRange
+	ChoiceTypeStep
 )
 
-// ObjectType represents object type identifier
+func (c ChoiceType) String() string {
+	switch c {
+	case ChoiceTypeEnum:
+		return "enum"
+	case ChoiceTypeRange:
+		return "range"
+	case ChoiceTypeStep:
+		return "step"
+	default:
+		return "unknown"
+	}
+}
+
+func (c ChoiceType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(c.String())
+}
+
+func (c *ChoiceType) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+
+	switch s {
+	case "enum":
+		*c = ChoiceTypeEnum
+	case "range":
+		*c = ChoiceTypeRange
+	case "step":
+		*c = ChoiceTypeStep
+	default:
+		return fmt.Errorf("unknown choice type: %s", s)
+	}
+	return nil
+}
+
+// ===== Object Type =====
+
 type ObjectType int
 
 const (
-	ObjectTypeNone       ObjectType = 0
-	ObjectTypeProps      ObjectType = 1
-	ObjectTypeFormat     ObjectType = 2
-	ObjectTypePortConfig ObjectType = 3
-	ObjectTypeRouteSwitch ObjectType = 4
+	ObjectTypeCore ObjectType = iota
+	ObjectTypeNode
+	ObjectTypePort
+	ObjectTypeLink
+	ObjectTypeFactory
+	ObjectTypeDevice
+	ObjectTypeProfile
+	ObjectTypeInterfaceNode
+	ObjectTypeInterfacePort
+	ObjectTypeInterfaceLink
 )
 
-// PropType represents property type
+func (o ObjectType) String() string {
+	switch o {
+	case ObjectTypeCore:
+		return "core"
+	case ObjectTypeNode:
+		return "node"
+	case ObjectTypePort:
+		return "port"
+	case ObjectTypeLink:
+		return "link"
+	case ObjectTypeFactory:
+		return "factory"
+	case ObjectTypeDevice:
+		return "device"
+	case ObjectTypeProfile:
+		return "profile"
+	case ObjectTypeInterfaceNode:
+		return "interface_node"
+	case ObjectTypeInterfacePort:
+		return "interface_port"
+	case ObjectTypeInterfaceLink:
+		return "interface_link"
+	default:
+		return "unknown"
+	}
+}
+
+func (o ObjectType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(o.String())
+}
+
+func (o *ObjectType) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+
+	switch s {
+	case "core":
+		*o = ObjectTypeCore
+	case "node":
+		*o = ObjectTypeNode
+	case "port":
+		*o = ObjectTypePort
+	case "link":
+		*o = ObjectTypeLink
+	case "factory":
+		*o = ObjectTypeFactory
+	case "device":
+		*o = ObjectTypeDevice
+	case "profile":
+		*o = ObjectTypeProfile
+	case "interface_node":
+		*o = ObjectTypeInterfaceNode
+	case "interface_port":
+		*o = ObjectTypeInterfacePort
+	case "interface_link":
+		*o = ObjectTypeInterfaceLink
+	default:
+		return fmt.Errorf("unknown object type: %s", s)
+	}
+	return nil
+}
+
+// ===== Property Type =====
+
 type PropType int
 
 const (
-	PropTypeDevice   PropType = 0
-	PropTypeNode     PropType = 1
-	PropTypePort     PropType = 2
-	PropTypeLink     PropType = 3
-	PropTypeEndpoint PropType = 4
-	PropTypeModule   PropType = 5
-	PropTypeFactory  PropType = 6
+	PropTypeUnknown PropType = iota
+	PropTypeInfo
+	PropTypeFormat
+	PropTypeFilter
+	PropTypeChannelMap
+	PropTypeRoute
+	PropTypeLatency
+	PropTypeMedia
+	PropTypeProfile
+	PropTypeClass
+	PropTypeRanges
+	PropTypeEnumFormat
 )
 
-// Rectangle represents a rectangular area
+func (p PropType) String() string {
+	switch p {
+	case PropTypeInfo:
+		return "info"
+	case PropTypeFormat:
+		return "format"
+	case PropTypeFilter:
+		return "filter"
+	case PropTypeChannelMap:
+		return "channel_map"
+	case PropTypeRoute:
+		return "route"
+	case PropTypeLatency:
+		return "latency"
+	case PropTypeMedia:
+		return "media"
+	case PropTypeProfile:
+		return "profile"
+	case PropTypeClass:
+		return "class"
+	case PropTypeRanges:
+		return "ranges"
+	case PropTypeEnumFormat:
+		return "enum_format"
+	default:
+		return "unknown"
+	}
+}
+
+func (p PropType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(p.String())
+}
+
+func (p *PropType) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+
+	switch s {
+	case "info":
+		*p = PropTypeInfo
+	case "format":
+		*p = PropTypeFormat
+	case "filter":
+		*p = PropTypeFilter
+	case "channel_map":
+		*p = PropTypeChannelMap
+	case "route":
+		*p = PropTypeRoute
+	case "latency":
+		*p = PropTypeLatency
+	case "media":
+		*p = PropTypeMedia
+	case "profile":
+		*p = PropTypeProfile
+	case "class":
+		*p = PropTypeClass
+	case "ranges":
+		*p = PropTypeRanges
+	case "enum_format":
+		*p = PropTypeEnumFormat
+	default:
+		return fmt.Errorf("unknown prop type: %s", s)
+	}
+	return nil
+}
+
+// ===== Rectangle =====
+
 type Rectangle struct {
-	X      int32
-	Y      int32
-	Width  uint32
-	Height uint32
+	X, Y, W, H int32
 }
 
-// Fraction represents a fraction
+func NewRectangle(x, y, w, h int32) *Rectangle {
+	return &Rectangle{X: x, Y: y, W: w, H: h}
+}
+
+func (r *Rectangle) String() string {
+	return fmt.Sprintf("Rectangle(%d, %d, %dx%d)", r.X, r.Y, r.W, r.H)
+}
+
+func (r *Rectangle) Area() int64 {
+	return int64(r.W) * int64(r.H)
+}
+
+func (r *Rectangle) Marshal() ([]byte, error) {
+	w := NewPODWriter()
+	w.writeUint32(PODTypeRectangle)
+	w.writeInt32(r.X)
+	w.writeInt32(r.Y)
+	w.writeInt32(r.W)
+	w.writeInt32(r.H)
+	return w.Bytes(), nil
+}
+
+func (r *Rectangle) Unmarshal(data []byte) error {
+	if len(data) < 20 {
+		return fmt.Errorf("data too short for rectangle")
+	}
+	r.X = int32(readUint32BE(data[4:8]))
+	r.Y = int32(readUint32BE(data[8:12]))
+	r.W = int32(readUint32BE(data[12:16]))
+	r.H = int32(readUint32BE(data[16:20]))
+	return nil
+}
+
+// ===== Fraction =====
+
 type Fraction struct {
-	Numerator   uint32
-	Denominator uint32
+	Num, Den uint32
 }
 
-// ===== POD Value Types =====
-// These are the concrete implementations of PODValue interface
-
-// PODNull represents a null value
-const PODNull = "null"
-
-// PODBool represents a boolean value
-type PODBool struct {
-	Value bool
+func NewFraction(num, den uint32) *Fraction {
+	return &Fraction{Num: num, Den: den}
 }
 
-func (p *PODBool) Marshal() []byte {
-	if p.Value {
-		return []byte{1}
+func (f *Fraction) String() string {
+	return fmt.Sprintf("%d/%d", f.Num, f.Den)
+}
+
+func (f *Fraction) Value() float64 {
+	if f.Den == 0 {
+		return 0
 	}
-	return []byte{0}
+	return float64(f.Num) / float64(f.Den)
 }
 
-func (p *PODBool) Unmarshal(data []byte) error {
-	if len(data) < 1 {
-		return fmt.Errorf("insufficient data for bool")
+func (f *Fraction) Marshal() ([]byte, error) {
+	w := NewPODWriter()
+	w.writeUint32(PODTypeFraction)
+	w.writeUint32(f.Num)
+	w.writeUint32(f.Den)
+	return w.Bytes(), nil
+}
+
+func (f *Fraction) Unmarshal(data []byte) error {
+	if len(data) < 12 {
+		return fmt.Errorf("data too short for fraction")
 	}
-	p.Value = data[0] != 0
+	f.Num = readUint32BE(data[4:8])
+	f.Den = readUint32BE(data[8:12])
 	return nil
 }
 
-func (p *PODBool) String() string {
-	return fmt.Sprintf("%v", p.Value)
-}
+// ===== Helper Functions =====
 
-func (p *PODBool) Type() string {
-	return "bool"
-}
-
-// PODInt represents an integer value
-type PODInt struct {
-	Value int32
-}
-
-func (p *PODInt) Marshal() []byte {
-	return MarshalInt32(p.Value)
-}
-
-func (p *PODInt) Unmarshal(data []byte) error {
-	val, err := UnmarshalInt32(data)
-	if err != nil {
-		return err
-	}
-	p.Value = val
-	return nil
-}
-
-func (p *PODInt) String() string {
-	return fmt.Sprintf("%d", p.Value)
-}
-
-func (p *PODInt) Type() string {
-	return "int"
-}
-
-// PODLong represents a long integer value
-type PODLong struct {
-	Value int64
-}
-
-func (p *PODLong) Marshal() []byte {
-	buf := make([]byte, 8)
-	for i := 0; i < 8; i++ {
-		buf[i] = byte((p.Value >> (uint(i) * 8)) & 0xFF)
-	}
-	return buf
-}
-
-func (p *PODLong) Unmarshal(data []byte) error {
-	if len(data) < 8 {
-		return fmt.Errorf("insufficient data for long")
-	}
-	p.Value = 0
-	for i := 0; i < 8; i++ {
-		p.Value |= int64(data[i]) << (uint(i) * 8)
-	}
-	return nil
-}
-
-func (p *PODLong) String() string {
-	return fmt.Sprintf("%d", p.Value)
-}
-
-func (p *PODLong) Type() string {
-	return "long"
-}
-
-// PODFloat represents a float value
-type PODFloat struct {
-	Value float32
-}
-
-func (p *PODFloat) Marshal() []byte {
-	return MarshalInt32(int32(p.Value))
-}
-
-func (p *PODFloat) Unmarshal(data []byte) error {
-	val, err := UnmarshalInt32(data)
-	if err != nil {
-		return err
-	}
-	p.Value = float32(val)
-	return nil
-}
-
-func (p *PODFloat) String() string {
-	return fmt.Sprintf("%f", p.Value)
-}
-
-func (p *PODFloat) Type() string {
-	return "float"
-}
-
-// PODDouble represents a double value
-type PODDouble struct {
-	Value float64
-}
-
-func (p *PODDouble) Marshal() []byte {
-	buf := make([]byte, 8)
-	for i := 0; i < 8; i++ {
-		buf[i] = byte((int64(p.Value) >> (uint(i) * 8)) & 0xFF)
-	}
-	return buf
-}
-
-func (p *PODDouble) Unmarshal(data []byte) error {
-	if len(data) < 8 {
-		return fmt.Errorf("insufficient data for double")
-	}
-	var val int64
-	for i := 0; i < 8; i++ {
-		val |= int64(data[i]) << (uint(i) * 8)
-	}
-	p.Value = float64(val)
-	return nil
-}
-
-func (p *PODDouble) String() string {
-	return fmt.Sprintf("%f", p.Value)
-}
-
-func (p *PODDouble) Type() string {
-	return "double"
-}
-
-// PODString represents a string value
-type PODString struct {
-	Value string
-}
-
-func (p *PODString) Marshal() []byte {
-	return MarshalString(p.Value)
-}
-
-func (p *PODString) Unmarshal(data []byte) error {
-	str, err := UnmarshalString(data)
-	if err != nil {
-		return err
-	}
-	p.Value = str
-	return nil
-}
-
-func (p *PODString) String() string {
-	return p.Value
-}
-
-func (p *PODString) Type() string {
-	return "string"
-}
-
-// PODBytes represents raw bytes value
-type PODBytes struct {
-	Data []byte
-}
-
-func (p *PODBytes) Marshal() []byte {
-	return p.Data
-}
-
-func (p *PODBytes) Unmarshal(data []byte) error {
-	p.Data = make([]byte, len(data))
-	copy(p.Data, data)
-	return nil
-}
-
-func (p *PODBytes) String() string {
-	return fmt.Sprintf("%x", p.Data)
-}
-
-func (p *PODBytes) Type() string {
-	return "bytes"
-}
-
-// PODArray represents an array of values
-type PODArray struct {
-	Items []PODValue
-	Type  PODTypeID
-}
-
-func (p *PODArray) Marshal() []byte {
-	// Marshal array: type + count + items
-	result := MarshalUint32(uint32(p.Type))
-	result = append(result, MarshalUint32(uint32(len(p.Items)))...)
-	for _, item := range p.Items {
-		result = append(result, item.Marshal()...)
-	}
-	return result
-}
-
-func (p *PODArray) Unmarshal(data []byte) error {
-	if len(data) < 8 {
-		return fmt.Errorf("insufficient data for array header")
-	}
-	// Parse type and count
-	typeVal, _ := UnmarshalUint32(data[:4])
-	count, _ := UnmarshalUint32(data[4:8])
-	p.Type = PODTypeID(typeVal)
-	p.Items = make([]PODValue, count)
-	return nil
-}
-
-func (p *PODArray) String() string {
-	return fmt.Sprintf("array[%d]", len(p.Items))
-}
-
-func (p *PODArray) Type() string {
-	return "array"
-}
-
-// PODStruct represents a structured value
-type PODStruct struct {
-	Members map[string]PODValue
-}
-
-func (p *PODStruct) Marshal() []byte {
-	result := []byte{}
-	for key, val := range p.Members {
-		result = append(result, MarshalString(key)...)
-		result = append(result, val.Marshal()...)
-	}
-	return result
-}
-
-func (p *PODStruct) Unmarshal(data []byte) error {
-	p.Members = make(map[string]PODValue)
-	return nil
-}
-
-func (p *PODStruct) String() string {
-	return fmt.Sprintf("struct{%d}", len(p.Members))
-}
-
-func (p *PODStruct) Type() string {
-	return "struct"
-}
-
-// PODObject represents an object value
-type PODObject struct {
-	Type       ObjectType
-	ID         uint32
-	Properties map[string]PODValue
-}
-
-func (p *PODObject) Marshal() []byte {
-	result := MarshalUint32(uint32(p.Type))
-	result = append(result, MarshalUint32(p.ID)...)
-	for key, val := range p.Properties {
-		result = append(result, MarshalString(key)...)
-		result = append(result, val.Marshal()...)
-	}
-	return result
-}
-
-func (p *PODObject) Unmarshal(data []byte) error {
-	if len(data) < 8 {
-		return fmt.Errorf("insufficient data for object header")
-	}
-	typeVal, _ := UnmarshalUint32(data[:4])
-	p.Type = ObjectType(typeVal)
-	p.ID, _ = UnmarshalUint32(data[4:8])
-	p.Properties = make(map[string]PODValue)
-	return nil
-}
-
-func (p *PODObject) String() string {
-	return fmt.Sprintf("object{type=%d,id=%d}", p.Type, p.ID)
-}
-
-func (p *PODObject) Type() string {
-	return "object"
-}
-
-// PODChoice represents a choice value
-type PODChoice struct {
-	ChoiceType ChoiceType
-	Value      PODValue
-	Min        PODValue
-	Max        PODValue
-}
-
-func (p *PODChoice) Marshal() []byte {
-	result := MarshalUint32(uint32(p.ChoiceType))
-	result = append(result, p.Value.Marshal()...)
-	if p.Min != nil {
-		result = append(result, p.Min.Marshal()...)
-	}
-	if p.Max != nil {
-		result = append(result, p.Max.Marshal()...)
-	}
-	return result
-}
-
-func (p *PODChoice) Unmarshal(data []byte) error {
+// readUint32BE reads a big-endian uint32
+func readUint32BE(data []byte) uint32 {
 	if len(data) < 4 {
-		return fmt.Errorf("insufficient data for choice type")
+		return 0
 	}
-	choiceType, _ := UnmarshalUint32(data[:4])
-	p.ChoiceType = ChoiceType(choiceType)
-	return nil
+	return uint32(data[0])<<24 | uint32(data[1])<<16 | uint32(data[2])<<8 | uint32(data[3])
 }
 
-func (p *PODChoice) String() string {
-	return fmt.Sprintf("choice{%v}", p.ChoiceType)
+// writeUint32BE writes a big-endian uint32
+func writeUint32BE(data []byte, val uint32) {
+	if len(data) < 4 {
+		return
+	}
+	data[0] = byte((val >> 24) & 0xFF)
+	data[1] = byte((val >> 16) & 0xFF)
+	data[2] = byte((val >> 8) & 0xFF)
+	data[3] = byte(val & 0xFF)
 }
 
-func (p *PODChoice) Type() string {
-	return "choice"
+// PODTypeFromID converts a type ID to string
+func PODTypeFromID(id uint32) string {
+	switch id {
+	case PODTypeInvalid:
+		return "invalid"
+	case PODTypeNone:
+		return "none"
+	case PODTypeBool:
+		return "bool"
+	case PODTypeInt:
+		return "int"
+	case PODTypeInt64:
+		return "int64"
+	case PODTypeUint32:
+		return "uint32"
+	case PODTypeString:
+		return "string"
+	case PODTypeBytes:
+		return "bytes"
+	case PODTypeFd:
+		return "fd"
+	case PODTypeArray:
+		return "array"
+	case PODTypeObject:
+		return "object"
+	case PODTypeFraction:
+		return "fraction"
+	case PODTypeRectangle:
+		return "rectangle"
+	case PODTypeID:
+		return "id"
+	default:
+		return fmt.Sprintf("unknown(%d)", id)
+	}
+}
+
+// PODTypeIDFromString converts a string to type ID
+func PODTypeIDFromString(s string) uint32 {
+	switch s {
+	case "invalid":
+		return PODTypeInvalid
+	case "none":
+		return PODTypeNone
+	case "bool":
+		return PODTypeBool
+	case "int":
+		return PODTypeInt
+	case "int64":
+		return PODTypeInt64
+	case "uint32":
+		return PODTypeUint32
+	case "string":
+		return PODTypeString
+	case "bytes":
+		return PODTypeBytes
+	case "fd":
+		return PODTypeFd
+	case "array":
+		return PODTypeArray
+	case "object":
+		return PODTypeObject
+	case "fraction":
+		return PODTypeFraction
+	case "rectangle":
+		return PODTypeRectangle
+	case "id":
+		return PODTypeID
+	default:
+		return PODTypeInvalid
+	}
 }

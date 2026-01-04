@@ -10,8 +10,8 @@ import (
 	"os"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/yourusername/pipewire-go/client"
-	"github.com/yourusername/pipewire-go/verbose"
+	"github.com/vignemail1/pipewire-go/client"
+	"github.com/vignemail1/pipewire-go/verbose"
 )
 
 // GuiApp represents the main GUI application

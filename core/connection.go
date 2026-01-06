@@ -19,6 +19,9 @@ import (
 // ProtocolVersion defines the protocol version
 const ProtocolVersion = 3
 
+// DefaultSocketPath is the default PipeWire socket path
+const DefaultSocketPath = "/run/pipewire-0"
+
 // Connection represents a connection to PipeWire daemon via unix socket
 type Connection struct {
 	socket     net.Conn
@@ -29,6 +32,33 @@ type Connection struct {
 	readBuf    []byte
 	writeBuf   []byte
 	syncID     uint32
+}
+
+// Dial establishes a connection to the PipeWire daemon
+// It takes a socket path (typically "/run/pipewire-0") and creates a Unix socket
+// connection, performing the initial handshake if needed
+func Dial(socketPath string, logger *verbose.Logger) (*Connection, error) {
+	if socketPath == "" {
+		socketPath = DefaultSocketPath
+	}
+
+	if logger == nil {
+		logger = verbose.NewLogger(verbose.LogLevelInfo, false)
+	}
+
+	logger.Infof("Dialing PipeWire daemon at %s", socketPath)
+
+	// Create the connection
+	conn, err := NewConnection(socketPath, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set a reasonable default timeout
+	conn.SetTimeout(5 * time.Second)
+
+	logger.Infof("Successfully connected to PipeWire daemon")
+	return conn, nil
 }
 
 // NewConnection creates a new connection to PipeWire

@@ -12,20 +12,23 @@ import (
 // ===== POD Type Constants =====
 
 const (
-	PODTypeInvalid   uint32 = 0
-	PODTypeNone      uint32 = 1
-	PODTypeBool      uint32 = 2
-	PODTypeInt       uint32 = 3
-	PODTypeInt64     uint32 = 4
-	PODTypeUint32    uint32 = 5
-	PODTypeString    uint32 = 6
-	PODTypeBytes     uint32 = 7
-	PODTypeFd        uint32 = 8
-	PODTypeArray     uint32 = 9
-	PODTypeObject    uint32 = 10
-	PODTypeFraction  uint32 = 11
+	PODTypeInvalid uint32 = 0
+	PODTypeNone    uint32 = 1
+	PODTypeBool    uint32 = 2
+	PODTypeInt     uint32 = 3
+	PODTypeInt64   uint32 = 4
+	PODTypeUint32  uint32 = 5
+	PODTypeString  uint32 = 6
+	PODTypeBytes   uint32 = 7
+	PODTypeFd      uint32 = 8
+	PODTypeArray   uint32 = 9
+	PODTypeObject  uint32 = 10
+	PODTypeFraction uint32 = 11
 	PODTypeRectangle uint32 = 12
-	PODTypeID        uint32 = 13
+	PODTypeID      uint32 = 13
+	// NEW: Floating point types
+	PODTypeFloat   uint32 = 14
+	PODTypeDouble  uint32 = 15
 )
 
 // ===== Choice Type =====
@@ -71,6 +74,7 @@ func (c *ChoiceType) UnmarshalJSON(data []byte) error {
 	default:
 		return fmt.Errorf("unknown choice type: %s", s)
 	}
+
 	return nil
 }
 
@@ -152,6 +156,7 @@ func (o *ObjectType) UnmarshalJSON(data []byte) error {
 	default:
 		return fmt.Errorf("unknown object type: %s", s)
 	}
+
 	return nil
 }
 
@@ -239,6 +244,7 @@ func (p *PropType) UnmarshalJSON(data []byte) error {
 	default:
 		return fmt.Errorf("unknown prop type: %s", s)
 	}
+
 	return nil
 }
 
@@ -262,22 +268,30 @@ func (r *Rectangle) Area() int64 {
 
 func (r *Rectangle) Marshal() ([]byte, error) {
 	w := NewPODWriter()
-	w.writeUint32(PODTypeRectangle)
-	w.writeInt32(r.X)
-	w.writeInt32(r.Y)
-	w.writeInt32(r.W)
-	w.writeInt32(r.H)
+	if err := w.WriteInt32(r.X); err != nil {
+		return nil, err
+	}
+	if err := w.WriteInt32(r.Y); err != nil {
+		return nil, err
+	}
+	if err := w.WriteInt32(r.W); err != nil {
+		return nil, err
+	}
+	if err := w.WriteInt32(r.H); err != nil {
+		return nil, err
+	}
 	return w.Bytes(), nil
 }
 
 func (r *Rectangle) Unmarshal(data []byte) error {
-	if len(data) < 20 {
+	if len(data) < 16 {
 		return fmt.Errorf("data too short for rectangle")
 	}
-	r.X = int32(readUint32BE(data[4:8]))
-	r.Y = int32(readUint32BE(data[8:12]))
-	r.W = int32(readUint32BE(data[12:16]))
-	r.H = int32(readUint32BE(data[16:20]))
+
+	r.X = int32(readUint32LE(data[0:4]))
+	r.Y = int32(readUint32LE(data[4:8]))
+	r.W = int32(readUint32LE(data[8:12]))
+	r.H = int32(readUint32LE(data[12:16]))
 	return nil
 }
 
@@ -299,45 +313,98 @@ func (f *Fraction) Value() float64 {
 	if f.Den == 0 {
 		return 0
 	}
+
 	return float64(f.Num) / float64(f.Den)
 }
 
 func (f *Fraction) Marshal() ([]byte, error) {
 	w := NewPODWriter()
-	w.writeUint32(PODTypeFraction)
-	w.writeUint32(f.Num)
-	w.writeUint32(f.Den)
+	if err := w.WriteUint32(f.Num); err != nil {
+		return nil, err
+	}
+	if err := w.WriteUint32(f.Den); err != nil {
+		return nil, err
+	}
 	return w.Bytes(), nil
 }
 
 func (f *Fraction) Unmarshal(data []byte) error {
-	if len(data) < 12 {
+	if len(data) < 8 {
 		return fmt.Errorf("data too short for fraction")
 	}
-	f.Num = readUint32BE(data[4:8])
-	f.Den = readUint32BE(data[8:12])
+
+	f.Num = readUint32LE(data[0:4])
+	f.Den = readUint32LE(data[4:8])
 	return nil
 }
 
 // ===== Helper Functions =====
 
-// readUint32BE reads a big-endian uint32
-func readUint32BE(data []byte) uint32 {
+// readUint32LE reads a little-endian uint32
+func readUint32LE(data []byte) uint32 {
 	if len(data) < 4 {
 		return 0
 	}
-	return uint32(data[0])<<24 | uint32(data[1])<<16 | uint32(data[2])<<8 | uint32(data[3])
+
+	return uint32(data[0]) | uint32(data[1])<<8 | uint32(data[2])<<16 | uint32(data[3])<<24
 }
 
-// writeUint32BE writes a big-endian uint32
-func writeUint32BE(data []byte, val uint32) {
+// writeUint32LE writes a little-endian uint32
+func writeUint32LE(data []byte, val uint32) {
 	if len(data) < 4 {
 		return
 	}
-	data[0] = byte((val >> 24) & 0xFF)
-	data[1] = byte((val >> 16) & 0xFF)
-	data[2] = byte((val >> 8) & 0xFF)
-	data[3] = byte(val & 0xFF)
+
+	data[0] = byte(val & 0xFF)
+	data[1] = byte((val >> 8) & 0xFF)
+	data[2] = byte((val >> 16) & 0xFF)
+	data[3] = byte((val >> 24) & 0xFF)
+}
+
+// AlignPadding returns the number of padding bytes needed to align to 8 bytes
+func AlignPadding(offset int) int {
+	remainder := offset % 8
+	if remainder == 0 {
+		return 0
+	}
+	return 8 - remainder
+}
+
+// AlignOffset rounds an offset up to the next 8-byte boundary
+func AlignOffset(offset int) int {
+	return offset + AlignPadding(offset)
+}
+
+// PODTypeSize returns the size in bytes for a POD type
+func PODTypeSize(typeID uint32) (int, error) {
+	switch typeID {
+	case PODTypeInvalid:
+		return 0, nil
+	case PODTypeNone:
+		return 0, nil
+	case PODTypeBool:
+		return 1, nil
+	case PODTypeInt:
+		return 4, nil
+	case PODTypeInt64:
+		return 8, nil
+	case PODTypeUint32:
+		return 4, nil
+	case PODTypeFloat:
+		return 4, nil
+	case PODTypeDouble:
+		return 8, nil
+	case PODTypeString, PODTypeBytes, PODTypeArray, PODTypeObject:
+		return -1, nil // variable length
+	case PODTypeFraction:
+		return 8, nil
+	case PODTypeRectangle:
+		return 16, nil
+	case PODTypeID:
+		return 4, nil
+	default:
+		return -1, fmt.Errorf("unknown POD type: %d", typeID)
+	}
 }
 
 // PODTypeFromID converts a type ID to string
@@ -371,6 +438,10 @@ func PODTypeFromID(id uint32) string {
 		return "rectangle"
 	case PODTypeID:
 		return "id"
+	case PODTypeFloat:
+		return "float"
+	case PODTypeDouble:
+		return "double"
 	default:
 		return fmt.Sprintf("unknown(%d)", id)
 	}
@@ -407,6 +478,10 @@ func PODTypeIDFromString(s string) uint32 {
 		return PODTypeRectangle
 	case "id":
 		return PODTypeID
+	case "float":
+		return PODTypeFloat
+	case "double":
+		return PODTypeDouble
 	default:
 		return PODTypeInvalid
 	}

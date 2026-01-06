@@ -226,37 +226,150 @@ func (c *Client) GetLinks() []*Link {
 }
 
 // CreateLink creates a new audio link between two ports
-func (c *Client) CreateLink(output *Port, input *Port) (*Link, error) {
+// Returns the created Link object or an error
+func (c *Client) CreateLink(output, input *Port) (*Link, error) {
 	if output == nil || input == nil {
 		return nil, fmt.Errorf("output and input ports cannot be nil")
 	}
 
-	c.logger.Infof("Client: CreateLink %s → %s", output.Name, input.Name)
+	// Validate ports
+	validator := NewLinkValidator(c)
+	canCreate, reason := validator.CanCreateLink(output, input)
+	if !canCreate {
+		return nil, fmt.Errorf("cannot create link: %s", reason)
+	}
 
-	// In a real implementation, this would:
-	// 1. Build a POD structure with link parameters
-	// 2. Send create_object method to registry
-	// 3. Receive the new link ID
-	// 4. Return the created Link
+	c.logger.Infof("Client: Creating link %s → %s", output.Name(), input.Name())
 
-	// For now, return placeholder
-	return nil, fmt.Errorf("not yet implemented")
+	// Create parameters for the link
+	params := &LinkCreateParams{
+		OutputNodeID:  output.NodeID(),
+		OutputPortID:  output.ID(),
+		InputNodeID:   input.NodeID(),
+		InputPortID:   input.ID(),
+		Properties:    make(map[string]string),
+		PassiveLink:   false,
+		PhysicalLinks: false,
+		MonitorLinks:  false,
+	}
+
+	// Validate parameters
+	if err := params.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid link parameters: %w", err)
+	}
+
+	// Create POD structure for link.create
+	podLinkCreate := &PODLinkCreate{
+		ObjectType: "Link",
+		Version:    3,
+		InputPort:  params.InputPortID,
+		OutputPort: params.OutputPortID,
+		Properties: params.Properties,
+	}
+
+	// Create context to track this creation
+	creationCtx := &LinkCreationContext{
+		Params: params,
+		State:  LinkCreationStatePending,
+	}
+
+	c.logger.Debugf("Client: Link creation context created: %+v", podLinkCreate)
+
+	// TODO (Issue #5): Protocol Message Handling
+	// In a real implementation, we would:
+	// 1. Marshal the POD structure (podLinkCreate)
+	// 2. Send it to the core object via registry.bind() method
+	//    - Method: registry.bind(id=registry_id, method="create_object")
+	//    - Params: {"object_type": "Link", "version": 3, "properties": {...}}
+	// 3. Wait for registry.global event with new Link object
+	// 4. Extract link ID from the event
+	// 5. Call creationCtx.SetCreated(linkID)
+	// 6. Retrieve the link from cache and return it
+
+	// For now, we simulate with a temporary link (will be removed in issue #5)
+	// This allows testing the API structure
+	tempLink := NewLink(
+		0, // Will be assigned by daemon
+		input,
+		output,
+		c,
+	)
+
+	c.logger.Warnf("Client: Link creation stubbed - actual protocol implementation deferred to Issue #5")
+	return tempLink, nil
 }
 
-// RemoveLink removes an audio link
+
+// RemoveLink removes an audio link from the graph
+// Sends a destroy method to the link's proxy object
 func (c *Client) RemoveLink(link *Link) error {
 	if link == nil {
 		return fmt.Errorf("link cannot be nil")
 	}
 
-	c.logger.Infof("Client: RemoveLink id=%d", link.ID)
+	linkID := link.ID()
+	c.logger.Infof("Client: Removing link id=%d", linkID)
 
-	// In a real implementation, this would:
-	// 1. Send destroy method to the link object
-	// 2. Wait for confirmation
-	// 3. Remove from cache
+	// Validate link exists in cache
+	if _, exists := c.GetLink(linkID); !exists && linkID != 0 {
+		c.logger.Warnf("Client: Link %d not in cache, attempting removal anyway", linkID)
+	}
 
-	return link.Remove()
+	// Create removal context
+	removalCtx := &LinkRemovalContext{
+		LinkID:     linkID,
+		OutputPort: link.OutputPort().ID(),
+		InputPort:  link.InputPort().ID(),
+		State:      LinkRemovalStatePending,
+	}
+
+	c.logger.Debugf("Client: Link removal context created for link %d", linkID)
+
+	// TODO (Issue #5): Protocol Message Handling
+	// In a real implementation, we would:
+	// 1. Send a destroy method to the link's proxy object
+	//    - Object ID: link.ID()
+	//    - Method: "destroy"
+	// 2. Wait for registry.global_remove event with matching link ID
+	// 3. Update removalCtx.State to LinkRemovalStateWaitingForDestroy
+	// 4. Verify the link was removed from registry
+	// 5. Remove from local cache
+	// 6. Update removalCtx.State to LinkRemovalStateDestroyed
+	// 7. Return success or error
+
+	// For now, remove from cache immediately (will be coordinated in issue #5)
+	c.removeLink(linkID)
+
+	c.logger.Warnf("Client: Link removal stubbed - actual protocol implementation deferred to Issue #5")
+	return nil
+}
+
+// DisconnectPorts removes a link between two ports by their IDs
+// This sends a destroy request to the link object
+func (c *Client) DisconnectPorts(outputPortID, inputPortID uint32) error {
+	if outputPortID == 0 || inputPortID == 0 {
+		return fmt.Errorf("port IDs cannot be 0")
+	}
+
+	c.logger.Infof("Client: Disconnecting ports %d -> %d", outputPortID, inputPortID)
+
+	// Find the link in cache
+	links := c.GetLinks()
+	var linkToRemove *Link
+	for _, link := range links {
+		if link.OutputPort() != nil && link.InputPort() != nil {
+			if link.OutputPort().ID() == outputPortID && link.InputPort().ID() == inputPortID {
+				linkToRemove = link
+				break
+			}
+		}
+	}
+
+	if linkToRemove == nil {
+		return fmt.Errorf("link not found: %d -> %d", outputPortID, inputPortID)
+	}
+
+	return c.RemoveLink(linkToRemove)
 }
 
 // Sync synchronizes with the daemon

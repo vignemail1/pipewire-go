@@ -157,7 +157,11 @@ func (l *Link) Disconnect() error {
 	if l.client == nil {
 		return fmt.Errorf("link not associated with client")
 	}
+	if l.outputPort == nil || l.inputPort == nil {
+		return fmt.Errorf("link ports are not set")
+	}
 
+	// Call the client's DisconnectPorts method
 	return l.client.DisconnectPorts(l.outputPort.ID(), l.inputPort.ID())
 }
 

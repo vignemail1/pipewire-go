@@ -1,6 +1,6 @@
 module github.com/vignemail1/pipewire-go
 
-go 1.24.0
+go 1.22
 
 require (
 	github.com/KarpelesLab/weak v0.1.1 // indirect

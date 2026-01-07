@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  pipewire:
+    image: fedora:latest
+    container_name: pipewire-test
+    privileged: true
+    volumes:
+      - /run/dbus:/run/dbus:ro
+      - pipewire-runtime:/run/pipewire
+    environment:
+      - XDG_RUNTIME_DIR=/run/pipewire
+      - PIPEWIRE_RUNTIME_DIR=/run/pipewire
+    command: |
+      bash -c '
+        dnf install -y pipewire pipewire-utils pipewire-alsa pipewire-pulseaudio dbus-daemon
+        mkdir -p /run/pipewire
+        dbus-daemon --system --fork
+        pipewire &
+        pipewire-pulse &
+        wireplumber &
+        sleep 5
+        echo "PipeWire services started"
+        tail -f /dev/null
+      '
+    healthcheck:
+      test: ["CMD", "pw-cli", "info", "0"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - pipewire-test
+
+volumes:
+  pipewire-runtime:
+
+networks:
+  pipewire-test:
+    driver: bridge

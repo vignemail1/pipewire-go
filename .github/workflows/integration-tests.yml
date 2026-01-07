@@ -1,0 +1,57 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ main, develop, 'feature/**' ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    - cron: '0 0 * * *'  # Daily at midnight
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Start PipeWire services
+      run: |
+        cd tests
+        docker-compose up -d
+        docker-compose ps
+        sleep 10
+
+    - name: Wait for PipeWire to be ready
+      run: |
+        timeout 30 bash -c 'until docker-compose -f tests/docker-compose.yml exec -T pipewire pw-cli info 0; do sleep 2; done'
+
+    - name: Run integration tests
+      run: |
+        go test -v -tags=integration -race ./tests/...
+
+    - name: Run benchmarks
+      run: |
+        go test -v -tags=integration -bench=. -benchmem ./tests/...
+
+    - name: Stop PipeWire services
+      if: always()
+      run: |
+        cd tests
+        docker-compose logs pipewire
+        docker-compose down -v
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: integration-test-results
+        path: |
+          tests/*.log
+          tests/*.out

@@ -1,420 +1,192 @@
-// Package main - Graph Visualization
-// cmd/pw-gui/graph.go
-// GTK-based graph rendering and visualization
-
 package main
 
 import (
 	"fmt"
 	"math"
-
-	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/vignemail1/pipewire-go/client"
 )
 
-// GraphVisualizer handles audio graph visualization
+// Point represents a 2D coordinate
+type Point struct {
+	X, Y float64
+}
+
+// NodeVisual represents visual properties of a node
+type NodeVisual struct {
+	X, Y, Width, Height float64
+	Label string
+	ID uint32
+}
+
+// LinkVisual represents visual properties of a link
+type LinkVisual struct {
+	Source, Target uint32
+	Route []Point
+}
+
+// GraphVisualizer handles graph visualization
 type GraphVisualizer struct {
-	client       *client.Client
-	drawingArea  *gtk.DrawingArea
-	zoomLevel    float64
-	panX         float64
-	panY         float64
-	nodeRadius   float64
-	selectedNode uint32
+	Nodes map[uint32]*NodeVisual
+	Links map[uint32]*LinkVisual
+	Engine *RoutingEngine
 }
 
 // NewGraphVisualizer creates a new graph visualizer
-func NewGraphVisualizer(c *client.Client) *GraphVisualizer {
+func NewGraphVisualizer() *GraphVisualizer {
 	return &GraphVisualizer{
-		client:      c,
-		zoomLevel:   1.0,
-		panX:        0,
-		panY:        0,
-		nodeRadius:  30,
+		Nodes: make(map[uint32]*NodeVisual),
+		Links: make(map[uint32]*LinkVisual),
+		Engine: NewRoutingEngine(),
 	}
 }
 
-// SetDrawingArea sets the drawing area
-func (gv *GraphVisualizer) SetDrawingArea(da *gtk.DrawingArea) {
-	gv.drawingArea = da
+// AddNode adds a node to the graph
+func (gv *GraphVisualizer) AddNode(id uint32, label string, x, y float64) *NodeVisual {
+	node := &NodeVisual{
+		ID: id,
+		Label: label,
+		X: x,
+		Y: y,
+		Width: 100,
+		Height: 40,
+	}
+	gv.Nodes[id] = node
+	return node
 }
 
-// Draw renders the audio graph
-func (gv *GraphVisualizer) Draw(cairo interface{}, width, height int, nodes map[uint32]*client.Node, links map[uint32]*client.Link) {
-	// Layout nodes
-	nodePositions := gv.layoutNodes(nodes, width, height)
+// RemoveNode removes a node from the graph
+func (gv *GraphVisualizer) RemoveNode(id uint32) {
+	delete(gv.Nodes, id)
 
-	// Draw connections first
-	gv.drawConnections(cairo, nodePositions, links, width, height)
-
-	// Draw nodes
-	gv.drawNodes(cairo, nodePositions, nodes, width, height)
-}
-
-// layoutNodes calculates positions for nodes
-func (gv *GraphVisualizer) layoutNodes(nodes map[uint32]*client.Node, width, height int) map[uint32][2]float64 {
-	positions := make(map[uint32][2]float64)
-
-	// Separate inputs and outputs
-	var inputs, outputs []*client.Node
-	for _, node := range nodes {
-		if node.GetDirection() == client.NodeDirectionCapture {
-			inputs = append(inputs, node)
-		} else {
-			outputs = append(outputs, node)
+	// Remove connected links
+	var linksToRemove []uint32
+	for linkID, link := range gv.Links {
+		if link.Source == id || link.Target == id {
+			linksToRemove = append(linksToRemove, linkID)
 		}
 	}
-
-	// Layout inputs on left
-	inputY := float64(height) / float64(len(inputs)+1)
-	for i, node := range inputs {
-		x := 50.0
-		y := inputY * float64(i+1)
-		positions[node.ID] = [2]float64{x, y}
+	for _, linkID := range linksToRemove {
+		delete(gv.Links, linkID)
 	}
-
-	// Layout outputs on right
-	outputY := float64(height) / float64(len(outputs)+1)
-	for i, node := range outputs {
-		x := float64(width) - 50.0
-		y := outputY * float64(i+1)
-		positions[node.ID] = [2]float64{x, y}
-	}
-
-	return positions
 }
 
-// drawNodes draws the node circles
-func (gv *GraphVisualizer) drawNodes(cairo interface{}, positions map[uint32][2]float64, nodes map[uint32]*client.Node, width, height int) {
-	// Cast cairo context
-	cr := cairo.(interface{ /* cairo methods */ })
+// AddLink adds a link between nodes
+func (gv *GraphVisualizer) AddLink(id uint32, source, target uint32) error {
+	if _, ok := gv.Nodes[source]; !ok {
+		return fmt.Errorf("source node %d not found", source)
+	}
+	if _, ok := gv.Nodes[target]; !ok {
+		return fmt.Errorf("target node %d not found", target)
+	}
 
-	for nodeID, node := range nodes {
-		if pos, exists := positions[nodeID]; exists {
-			x := pos[0]
-			y := pos[1]
+	link := &LinkVisual{
+		Source: source,
+		Target: target,
+	}
 
-			// Draw circle
-			cr.(*interface{})./* SetSourceRGB */(0.3, 0.6, 0.9)
-			cr.(*interface{})./* Arc */(x, y, gv.nodeRadius, 0, 2*math.Pi)
-			cr.(*interface{})./* Fill */()
+	// Calculate route
+	link.Route = gv.Engine.CalculateRoute(gv.Nodes[source], gv.Nodes[target])
 
-			// Draw border
-			cr.(*interface{})./* SetSourceRGB */(1.0, 1.0, 1.0)
-			cr.(*interface{})./* SetLineWidth */(2)
-			cr.(*interface{})./* Arc */(x, y, gv.nodeRadius, 0, 2*math.Pi)
-			cr.(*interface{})./* Stroke */()
+	gv.Links[id] = link
+	return nil
+}
 
-			// Draw text
-			cr.(*interface{})./* SetSourceRGB */(1.0, 1.0, 1.0)
-			cr.(*interface{})./* MoveTo */(x-20, y+5)
-			cr.(*interface{})./* ShowText */(node.Name())
+// RemoveLink removes a link
+func (gv *GraphVisualizer) RemoveLink(id uint32) {
+	delete(gv.Links, id)
+}
+
+// GetNodeAt returns the node at the given coordinates
+func (gv *GraphVisualizer) GetNodeAt(x, y float64) *NodeVisual {
+	for _, node := range gv.Nodes {
+		if x >= node.X && x <= node.X+node.Width &&
+		   y >= node.Y && y <= node.Y+node.Height {
+			return node
 		}
 	}
+	return nil
 }
 
-// drawConnections draws the connection lines
-func (gv *GraphVisualizer) drawConnections(cairo interface{}, positions map[uint32][2]float64, links map[uint32]*client.Link, width, height int) {
-	for _, link := range links {
-		if link.Output != nil && link.Input != nil {
-			outputPos, outputExists := positions[link.Output.NodeID]
-			inputPos, inputExists := positions[link.Input.NodeID]
-
-			if outputExists && inputExists {
-				// Draw connection line
-				cr := cairo.(interface{})
-				if link.IsActive() {
-					cr.(*interface{})./* SetSourceRGB */(0.0, 1.0, 0.0)
-				} else {
-					cr.(*interface{})./* SetSourceRGB */(0.5, 0.5, 0.5)
-				}
-
-				cr.(*interface{})./* SetLineWidth */(2)
-				cr.(*interface{})./* MoveTo */(outputPos[0]+gv.nodeRadius, outputPos[1])
-				cr.(*interface{})./* LineTo */(inputPos[0]-gv.nodeRadius, inputPos[1])
-				cr.(*interface{})./* Stroke */()
-			}
-		}
-	}
-}
-
-// ZoomIn increases zoom level
-func (gv *GraphVisualizer) ZoomIn() {
-	gv.zoomLevel *= 1.2
-	gv.redraw()
-}
-
-// ZoomOut decreases zoom level
-func (gv *GraphVisualizer) ZoomOut() {
-	gv.zoomLevel /= 1.2
-	if gv.zoomLevel < 0.1 {
-		gv.zoomLevel = 0.1
-	}
-	gv.redraw()
-}
-
-// FitToWindow adjusts zoom to fit all nodes
-func (gv *GraphVisualizer) FitToWindow() {
-	gv.zoomLevel = 1.0
-	gv.panX = 0
-	gv.panY = 0
-	gv.redraw()
-}
-
-// Pan moves the view by offset
-func (gv *GraphVisualizer) Pan(dx, dy float64) {
-	gv.panX += dx
-	gv.panY += dy
-	gv.redraw()
-}
-
-// SelectNode selects a node
-func (gv *GraphVisualizer) SelectNode(nodeID uint32) {
-	gv.selectedNode = nodeID
-	gv.redraw()
-}
-
-// redraw triggers a redraw
-func (gv *GraphVisualizer) redraw() {
-	if gv.drawingArea != nil {
-		gv.drawingArea.QueueDraw()
-	}
-}
-
-// RoutingEngine handles audio routing operations
+// RoutingEngine handles link routing calculations
 type RoutingEngine struct {
-	client           *client.Client
-	selectedOutput   uint32
-	selectedInput    uint32
-	previewLink      *PreviewLink
-}
-
-// PreviewLink represents a preview of a link before creation
-type PreviewLink struct {
-	OutputID uint32
-	InputID  uint32
-	Valid    bool
+	Strategy string // "direct", "manhattan", "bezier"
 }
 
 // NewRoutingEngine creates a new routing engine
-func NewRoutingEngine(c *client.Client) *RoutingEngine {
+func NewRoutingEngine() *RoutingEngine {
 	return &RoutingEngine{
-		client: c,
+		Strategy: "bezier",
 	}
 }
 
-// SelectOutput selects an output port
-func (re *RoutingEngine) SelectOutput(portID uint32) error {
-	port := re.client.GetPort(portID)
-	if port == nil {
-		return fmt.Errorf("port not found")
-	}
-
-	if port.Direction != client.PortDirectionOutput {
-		return fmt.Errorf("port is not an output")
-	}
-
-	re.selectedOutput = portID
-	re.updatePreview()
-	return nil
-}
-
-// SelectInput selects an input port
-func (re *RoutingEngine) SelectInput(portID uint32) error {
-	port := re.client.GetPort(portID)
-	if port == nil {
-		return fmt.Errorf("port not found")
-	}
-
-	if port.Direction != client.PortDirectionInput {
-		return fmt.Errorf("port is not an input")
-	}
-
-	re.selectedInput = portID
-	re.updatePreview()
-	return nil
-}
-
-// updatePreview updates the link preview
-func (re *RoutingEngine) updatePreview() {
-	if re.selectedOutput > 0 && re.selectedInput > 0 {
-		re.previewLink = &PreviewLink{
-			OutputID: re.selectedOutput,
-			InputID:  re.selectedInput,
-			Valid:    true,
-		}
+// CalculateRoute calculates the route between two nodes
+func (re *RoutingEngine) CalculateRoute(from, to *NodeVisual) []Point {
+	switch re.Strategy {
+	case "direct":
+		return re.directRoute(from, to)
+	case "manhattan":
+		return re.manhattanRoute(from, to)
+	default:
+		return re.bezierRoute(from, to)
 	}
 }
 
-// CreateLink creates the previewed link
-func (re *RoutingEngine) CreateLink() (uint32, error) {
-	if re.previewLink == nil || !re.previewLink.Valid {
-		return 0, fmt.Errorf("no valid preview link")
-	}
+// directRoute returns a direct line
+func (re *RoutingEngine) directRoute(from, to *NodeVisual) []Point {
+	fromX := from.X + from.Width/2
+	fromY := from.Y + from.Height/2
+	toX := to.X + to.Width/2
+	toY := to.Y + to.Height/2
 
-	linkID, err := re.client.CreateLink(re.previewLink.OutputID, re.previewLink.InputID)
-	if err != nil {
-		return 0, err
-	}
-
-	// Reset selection
-	re.selectedOutput = 0
-	re.selectedInput = 0
-	re.previewLink = nil
-
-	return linkID, nil
-}
-
-// CancelRouting cancels routing mode
-func (re *RoutingEngine) CancelRouting() {
-	re.selectedOutput = 0
-	re.selectedInput = 0
-	re.previewLink = nil
-}
-
-// SettingsPanel manages application settings
-type SettingsPanel struct {
-	theme        string
-	autoRefresh  bool
-	refreshRate  int
-	showMetadata bool
-	compactMode  bool
-}
-
-// NewSettingsPanel creates a new settings panel
-func NewSettingsPanel() *SettingsPanel {
-	return &SettingsPanel{
-		theme:        "dark",
-		autoRefresh:  true,
-		refreshRate:  500,
-		showMetadata: true,
-		compactMode:  false,
+	return []Point{
+		{fromX, fromY},
+		{toX, toY},
 	}
 }
 
-// SetTheme sets the UI theme
-func (sp *SettingsPanel) SetTheme(theme string) {
-	sp.theme = theme
-}
+// manhattanRoute returns a manhattan-style path
+func (re *RoutingEngine) manhattanRoute(from, to *NodeVisual) []Point {
+	fromX := from.X + from.Width/2
+	fromY := from.Y + from.Height/2
+	toX := to.X + to.Width/2
+	toY := to.Y + to.Height/2
 
-// SetAutoRefresh sets auto-refresh
-func (sp *SettingsPanel) SetAutoRefresh(enabled bool) {
-	sp.autoRefresh = enabled
-}
+	midX := (fromX + toX) / 2
 
-// SetRefreshRate sets the refresh rate
-func (sp *SettingsPanel) SetRefreshRate(rate int) {
-	sp.refreshRate = rate
-}
-
-// SetCompactMode sets compact mode
-func (sp *SettingsPanel) SetCompactMode(compact bool) {
-	sp.compactMode = compact
-}
-
-// StatusBar displays application status
-type StatusBar struct {
-	status   string
-	mode     string
-	time     string
-	message  string
-	progress int
-}
-
-// NewStatusBar creates a new status bar
-func NewStatusBar() *StatusBar {
-	return &StatusBar{
-		status:   "Ready",
-		mode:     "Normal",
-		progress: 0,
+	return []Point{
+		{fromX, fromY},
+		{midX, fromY},
+		{midX, toY},
+		{toX, toY},
 	}
 }
 
-// GetWidget returns the status bar widget
-func (sb *StatusBar) GetWidget() gtk.Widgetter {
-	box := gtk.NewBoxOrientation(gtk.OrientationHorizontal, 10)
-	statusLabel := gtk.NewLabel(sb.status)
-	modeLabel := gtk.NewLabel(sb.mode)
-	box.Append(statusLabel)
-	box.Append(modeLabel)
-	return box
-}
+// bezierRoute returns a bezier curve
+func (re *RoutingEngine) bezierRoute(from, to *NodeVisual) []Point {
+	fromX := from.X + from.Width/2
+	fromY := from.Y + from.Height/2
+	toX := to.X + to.Width/2
+	toY := to.Y + to.Height/2
 
-// SetStatus sets the status message
-func (sb *StatusBar) SetStatus(status string) {
-	sb.status = status
-}
+	var points []Point
+	steps := 20
 
-// SetMode sets the current mode
-func (sb *StatusBar) SetMode(mode string) {
-	sb.mode = mode
-}
+	for i := 0; i <= steps; i++ {
+		t := float64(i) / float64(steps)
 
-// SetMessage sets a temporary message
-func (sb *StatusBar) SetMessage(message string) {
-	sb.message = message
-}
+		// Quadratic Bezier with control point
+		controlX := (fromX + toX) / 2
+		controlY := (fromY + toY) / 2 - 50
 
-// SetProgress sets the progress value (0-100)
-func (sb *StatusBar) SetProgress(progress int) {
-	if progress < 0 {
-		progress = 0
-	}
-	if progress > 100 {
-		progress = 100
-	}
-	sb.progress = progress
-}
+		x := math.Pow(1-t, 2)*fromX +
+			2*(1-t)*t*controlX +
+			t*t*toX
 
-// ConnectionDialog handles connection creation
-type ConnectionDialog struct {
-	dialog         *gtk.Dialog
-	outputCombo    *gtk.ComboBox
-	inputCombo     *gtk.ComboBox
-	outputModel    *gtk.StringList
-	inputModel     *gtk.StringList
-}
+		y := math.Pow(1-t, 2)*fromY +
+			2*(1-t)*t*controlY +
+			t*t*toY
 
-// NewConnectionDialog creates a new connection dialog
-func NewConnectionDialog(nodes map[uint32]*client.Node) *ConnectionDialog {
-	dialog := gtk.NewDialog()
-	dialog.SetTitle("Create Audio Connection")
-
-	// Create lists
-	outputModel := gtk.NewStringList([]string{})
-	inputModel := gtk.NewStringList([]string{})
-
-	// Populate lists
-	for _, node := range nodes {
-		for _, port := range node.GetPorts() {
-			if port.Direction == client.PortDirectionOutput {
-				outputModel.Append(fmt.Sprintf("[%d] %s", port.ID, port.Name))
-			} else {
-				inputModel.Append(fmt.Sprintf("[%d] %s", port.ID, port.Name))
-			}
-		}
+		points = append(points, Point{x, y})
 	}
 
-	outputCombo := gtk.NewComboBox()
-	inputCombo := gtk.NewComboBox()
-
-	return &ConnectionDialog{
-		dialog:      dialog,
-		outputCombo: outputCombo,
-		inputCombo:  inputCombo,
-		outputModel: outputModel,
-		inputModel:  inputModel,
-	}
-}
-
-// Show displays the dialog
-func (cd *ConnectionDialog) Show() bool {
-	response := cd.dialog.Run()
-	return response == gtk.ResponseOK
-}
-
-// GetSelectedPorts returns selected output and input ports
-func (cd *ConnectionDialog) GetSelectedPorts() (uint32, uint32) {
-	// Extract IDs from combo selections
-	return 0, 0
+	return points
 }

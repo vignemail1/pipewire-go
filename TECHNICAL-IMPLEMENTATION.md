@@ -1,515 +1,665 @@
 # Technical Implementation Details
 
 **For:** vignemail1/pipewire-go  
-**Date:** January 7, 2026, 03:33 CET
+**Date:** January 7, 2026, 03:44 CET
 
 ---
 
-## 🎉 RELEASE v0.2.0 - PRODUCTION READY
+## 🎯 RELEASE v0.2.0 - PRODUCTION READY
 
-### Status: ✅ RELEASED
-- **Tag:** v0.2.0
-- **Release Date:** January 7, 2026
-- **Release URL:** https://github.com/vignemail1/pipewire-go/releases/tag/v0.2.0
+**Status:** ✅ RELEASED  
+**Tag:** v0.2.0  
+**Commit:** f56b8aa  
+**Release:** https://github.com/vignemail1/pipewire-go/releases/tag/v0.2.0
 
 ---
 
-## 📺 **pw-gui: GTK4 Visual Audio Graph Interface**
+## 🎨 Virtual Node Creation (Issue #46)
 
 ### Overview
 
-**pw-gui** is a modern GTK4 graphical user interface for PipeWire graph management. It provides real-time visualization and interactive control of audio nodes and connections with advanced routing algorithms.
+**Feature:** Allow users to programmatically create and manage virtual audio nodes via library API, pw-gui, and pw-tui.
 
-### Core Features
+**Scope:**
+- Core library API for virtual node creation
+- pw-gui creation wizard with UI
+- pw-tui multi-step terminal wizard
+- CLI tool `pw-virtual`
+- Pre-configured node presets
 
-#### 1. **Real-Time Graph Visualization**
+### Core API Implementation
 
-```
-┌─────────────────────────────────────────────┐
-│  pw-gui - PipeWire Audio Graph Visualizer   │
-├─────────────────────────────────────────────┤
-│                                             │
-│    [Microphone]  ────▶  [Volume Filter]   │
-│                          │                 │
-│                          ▼                 │
-│    [System In]  ────▶  [Equalizer]  ────▶ [Speakers] │
-│                          │                 │
-│                          ▼                 │
-│    [Browser]  ────────  [Recording]       │
-│                                             │
-└─────────────────────────────────────────────┘
-```
+**File:** `core/virtual_node.go`
 
-**Implementation:**
-- Live PipeWire graph monitoring
-- Auto-update on topology changes
-- Node positioning with layout algorithms
-- Interactive pan and zoom
-- Performance optimized rendering (~60 FPS)
+#### VirtualNode Structures
 
-#### 2. **Node Management**
+```go
+// VirtualNodeType defines the type of virtual node
+type VirtualNodeType string
 
-**Visual Representation:**
-- **Shape**: Rounded rectangles with gradient fill
-- **Color coding**:
-  - 🔵 Capture devices (blue)
-  - 🟡 Playback devices (yellow)
-  - 🟢 Filters/Effects (green)
-  - 🔴 Recording/Monitor nodes (red)
-- **Labels**: Node name and port count
-- **Status indicator**: Connection status badge
+const (
+    VirtualNode_Sink       VirtualNodeType = "sink"
+    VirtualNode_Source     VirtualNodeType = "source"
+    VirtualNode_Filter     VirtualNodeType = "filter"
+    VirtualNode_Loopback   VirtualNodeType = "loopback"
+)
 
-**Interactive Operations:**
-- Click to select/deselect node
-- Drag to reposition (with physics simulation)
-- Right-click for context menu:
-  - "View Properties" - Show detailed node info
-  - "Connect..." - Quick link dialog
-  - "Monitor" - Enable real-time monitoring
-  - "Pause/Resume" - Control node state
-  - "Delete" - Remove node (if supported)
+// VirtualNodeFactory type
+type VirtualNodeFactory string
 
-#### 3. **Link Management**
+const (
+    Factory_NullAudioSink     VirtualNodeFactory = "support.null-audio-sink"
+    Factory_NullAudioSource   VirtualNodeFactory = "support.null-audio-source"
+    Factory_Adapter           VirtualNodeFactory = "adapter"
+    Factory_Loopback          VirtualNodeFactory = "libpipewire-module-loopback"
+    Factory_FilterChain       VirtualNodeFactory = "filter-chain"
+)
 
-**Visual Representation:**
-- **Types of lines**:
-  - Solid line: Audio data (PCM)
-  - Dashed line: Control signal (MIDI)
-  - Dotted line: Metadata
-- **Color gradient**: Source color → Target color
-- **Thickness**: Based on sample rate / bit depth
-- **Animation**: Data flow animation along links
+// VirtualNodeConfig holds configuration for virtual node
+type VirtualNodeConfig struct {
+    // Basic info
+    Name        string
+    Description string
+    Type        VirtualNodeType
+    Factory     VirtualNodeFactory
+    
+    // Audio properties
+    Channels    uint32
+    SampleRate  uint32
+    BitDepth    uint32
+    ChannelLayout string // "FL FR" for stereo
+    
+    // Behavior
+    Passive     bool
+    Virtual     bool
+    Exclusive   bool
+    DontReconnect bool
+    
+    // Advanced
+    Latency     string // "1024/48000" format
+    Priority    int
+    
+    // Extra properties
+    CustomProps map[string]interface{}
+}
 
-**Interactive Operations:**
-- Drag node port to create link
-- Right-click link for context menu:
-  - "View Details" - Link format, buffer size, latency
-  - "Reroute" - Change source/target
-  - "Delete" - Remove link
-  - "Monitor" - Show real-time data flow
-- Hover for format tooltip (e.g., "48kHz, 24-bit, 6 channels")
-
-#### 4. **Routing Strategies**
-
-The GUI supports multiple graph layout algorithms:
-
-**Strategy 1: Direct Routing**
-```
-Source ──────────────────→ Target
-(Straight lines)
-```
-- **Use case**: Simple graphs, performance priority
-- **Pros**: Fast rendering, clear topology
-- **Cons**: Link overlap in complex graphs
-
-**Strategy 2: Manhattan Routing**
-```
-Source ┐
-       │
-       ├─────┐
-             │
-             └─→ Target
-(Right angles)
-```
-- **Use case**: Complex graphs, readability priority
-- **Pros**: No overlapping links, cleaner appearance
-- **Cons**: Slower computation, requires more space
-
-**Strategy 3: Bezier Routing**
-```
-Source ╱─────╲
-       ╲     ╱
-        ╲   ╱  Target
-(Smooth curves)
-```
-- **Use case**: Professional appearance, animation-friendly
-- **Pros**: Beautiful rendering, smooth curves
-- **Cons**: Highest CPU usage, hardest to follow visually
-
-**Switching Strategies:**
-```
-Menu: View → Routing Strategy
-  ○ Direct
-  ○ Manhattan
-  ○ Bezier (default)
+// VirtualNode represents a virtual node in the graph
+type VirtualNode struct {
+    ID         uint32
+    Config     VirtualNodeConfig
+    Ports      []*Port
+    CreatedAt  time.Time
+    UpdatedAt  time.Time
+}
 ```
 
-#### 5. **Interactive Controls**
+#### Client Methods
 
-**Keyboard Shortcuts:**
-```
-Ctrl+A    : Select all nodes
-Ctrl+D    : Deselect all
-Delete    : Delete selected link/node
-+         : Zoom in
--         : Zoom out
-Ctrl+0    : Fit to window
-Space     : Auto-layout
-F5        : Refresh
-Q         : Quit
-```
+```go
+// CreateVirtualNode creates a new virtual node in the graph
+func (c *Client) CreateVirtualNode(config VirtualNodeConfig) (*VirtualNode, error)
 
-**Mouse Controls:**
-- **Left Click**: Select node/link
-- **Left Drag**: Move node / Pan view
-- **Right Click**: Context menu
-- **Scroll Wheel**: Zoom in/out
-- **Ctrl + Drag**: Box select multiple nodes
+// GetVirtualNode retrieves a virtual node by ID
+func (c *Client) GetVirtualNode(id uint32) (*VirtualNode, error)
 
-#### 6. **Properties Panel**
+// DeleteVirtualNode removes a virtual node from the graph
+func (v *VirtualNode) Delete() error
 
-**Shows for selected node:**
-```
-┌─────────────────────────────┐
-│ Node Properties             │
-├─────────────────────────────┤
-│ ID:              42          │
-│ Name:            Speakers    │
-│ Type:            Playback    │
-│ Driver:          alsa        │
-│ State:           Running     │
-│ Channels:        2           │
-│ Sample Rate:     48000 Hz    │
-│ Latency:         1.33 ms     │
-│ Ports: [4]                  │
-│  ├─ Left (audio)            │
-│  └─ Right (audio)           │
-│                              │
-│ [Edit]  [Monitor] [Close]   │
-└─────────────────────────────┘
+// UpdateProperty updates a node property
+func (v *VirtualNode) UpdateProperty(key string, value interface{}) error
+
+// GetProperty retrieves a node property
+func (v *VirtualNode) GetProperty(key string) (interface{}, error)
+
+// GetPorts returns all ports belonging to this node
+func (v *VirtualNode) GetPorts() ([]*Port, error)
+
+// Refresh syncs node state with daemon
+func (v *VirtualNode) Refresh() error
 ```
 
-#### 7. **Real-Time Monitoring**
+#### Preset Configurations
 
-**Per-Link Metrics:**
-- Current sample rate
-- Bit depth
-- Channel layout
-- Buffer size
-- Latency (milliseconds)
-- Data flow animation
-- Error rate (if any)
+```go
+// GetVirtualNodePreset returns a preconfigured node
+func GetVirtualNodePreset(preset string) VirtualNodeConfig
 
-**Per-Node Metrics:**
-- CPU usage
-- Memory allocation
-- Active ports count
-- Connection status
-- Uptime
+// Available presets:
+// "null-sink"     - Null audio sink (discard)
+// "null-source"   - Null audio source (silence)
+// "loopback"      - Virtual loopback pair
+// "recording"     - Recording virtual sink (passive)
+// "monitoring"    - Monitoring virtual source
+// "default"       - Default stereo sink
 
-#### 8. **Graph Export/Import**
-
-**Export Capabilities:**
-```bash
-# Export current topology as JSON
-File → Export Graph → topology.json
-
-# Export as DOT format (Graphviz)
-File → Export as DOT → topology.dot
-
-# Take screenshot of current graph
-File → Screenshot → graph_2026-01-07.png
+var presets = map[string]VirtualNodeConfig{
+    "null-sink": {
+        Name:        "Null Sink",
+        Description: "Discards all audio",
+        Type:        VirtualNode_Sink,
+        Factory:     Factory_NullAudioSink,
+        Channels:    2,
+        SampleRate:  48000,
+        BitDepth:    32,
+        Passive:     true,
+    },
+    "loopback": {
+        Name:        "Virtual Loopback",
+        Description: "Virtual audio loopback pair",
+        Type:        VirtualNode_Loopback,
+        Factory:     Factory_Loopback,
+        Channels:    2,
+        SampleRate:  48000,
+        BitDepth:    32,
+    },
+    "recording": {
+        Name:        "Recording",
+        Description: "Virtual recording sink",
+        Type:        VirtualNode_Sink,
+        Factory:     Factory_NullAudioSink,
+        Channels:    2,
+        SampleRate:  48000,
+        BitDepth:    32,
+        Passive:     true,
+    },
+    // ... more presets
+}
 ```
 
-**Import Saved Configuration:**
-```bash
-# Load and apply saved topology
-File → Import Configuration → saved_config.json
+#### Usage Example
+
+```go
+package main
+
+import (
+    pw "github.com/vignemail1/pipewire-go"
+)
+
+func main() {
+    client, _ := pw.NewClient("my-app")
+    defer client.Disconnect()
+    
+    // Method 1: Use preset
+    config := pw.GetVirtualNodePreset("recording")
+    config.Name = "My Recording Sink"
+    
+    // Method 2: Custom configuration
+    config := pw.VirtualNodeConfig{
+        Name:        "VST Processing",
+        Description: "Virtual sink for VST processing",
+        Type:        pw.VirtualNode_Sink,
+        Factory:     pw.Factory_NullAudioSink,
+        Channels:    2,
+        SampleRate:  48000,
+        BitDepth:    32,
+        Passive:     true,
+    }
+    
+    // Create the node
+    virtualNode, err := client.CreateVirtualNode(config)
+    if err != nil {
+        panic(err)
+    }
+    
+    // The node is now in the graph
+    fmt.Printf("Created virtual node ID: %d\n", virtualNode.ID)
+    
+    // Update property
+    virtualNode.UpdateProperty("node.description", "Updated VST Sink")
+    
+    // Get ports
+    ports, _ := virtualNode.GetPorts()
+    fmt.Printf("Ports: %+v\n", ports)
+    
+    // Clean up
+    defer virtualNode.Delete()
+}
 ```
 
 ---
 
-## 🖥️ **pw-tui: Terminal User Interface for Audio Graph Control**
+## 📺 pw-gui Virtual Node Creation
 
-### Overview
+### Menu Integration
 
-**pw-tui** is a full-featured terminal user interface for PipeWire management. It brings pw-gui functionality to the terminal with keyboard-driven navigation and real-time updates.
+**Main Menu:** `File → Create Virtual Node`
 
-### Core Features
-
-#### 1. **Main Dashboard View**
+### Creation Dialog
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ pw-tui - PipeWire Terminal Interface                v0.2.0 │
-├─────────────────────────────────────────────────────────────┤
-│ [N]odes  [P]orts  [L]inks  [S]tats  [C]onfig  [H]elp  [Q]uit│
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│ NODES (4)                                                   │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ ID   Name           Type      State     Channels    │R(►)│ │
-│ │ 42   Microphone     Capture   Running   1          │    │ │
-│ │ 50   Speakers       Playback  Running   2          │    │ │
-│ │ 51   System In      Capture   Idle      2          │    │ │
-│ │ 52   Recording      Monitor   Running   2          │    │ │
-│ └─────────────────────────────────────────────────────────┘ │
-│                                                             │
-│ QUICK ACTIONS:                                              │
-│ [A]dd Link  [R]emove Link  [E]dit Node  [P]roperties       │
-│                                                             │
-│ [Status] Ready | FPS: 60 | Mem: 12.3 MB | CPU: 0.2%       │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│ Create Virtual Node                                                    [×] │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ Type:  ○ Sink   ○ Source   ○ Filter   ○ Loopback                          │
+│                                                                            │
+│ Name:  [                                                            ]      │
+│ Desc:  [                                                            ]      │
+│                                                                            │
+│ ┌────────────────────────────────────────────────────────────────────────┐ │
+│ │ Audio Configuration                                                  │ │
+│ ├────────────────────────────────────────────────────────────────────────┤ │
+│ │ Channels:     [2 ▼]                                                  │ │
+│ │ Sample Rate:  [48000 ▼]                                              │ │
+│ │ Bit Depth:    [32 ▼]                                                 │ │
+│ │ Layout:       [FL FR ▼]                                              │ │
+│ └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                            │
+│ ┌────────────────────────────────────────────────────────────────────────┐ │
+│ │ Options                                                              │ │
+│ ├────────────────────────────────────────────────────────────────────────┤ │
+│ │ ☐ Passive (don't hold graph)                                         │ │
+│ │ ☐ Virtual                                                            │ │
+│ │ ☐ Exclusive                                                          │ │
+│ │ ☐ Don't reconnect                                                    │ │
+│ └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                            │
+│ Preset: [Default ▼] or [Loopback ▼] [Recording ▼]                        │
+│                                                                            │
+│ [Create] [Cancel] [Load Preset...]                                       │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### 2. **Interactive Nodes Panel**
+### Features
 
-**Features:**
-- Scrollable list of all nodes
-- Highlight current selection
-- Real-time status updates
-- Color coding by type
-- Quick info on hover
+✅ **Preset Dropdown**
+- Default, Loopback, Recording, Monitoring, Null, Custom
+- Auto-populate form from preset
+
+✅ **Type Selection**
+- Sink (output), Source (input), Filter, Loopback
+- Visual icons for each type
+
+✅ **Audio Configuration Panel**
+- Channels: 1-8 spinbox
+- Sample Rate: 44.1kHz, 48kHz, 96kHz, 192kHz
+- Bit Depth: 16, 24, 32 options
+- Channel Layout: FL FR, FL FR LFE, etc.
+
+✅ **Advanced Options**
+- Passive: Don't hold graph playing
+- Virtual: Mark as virtual
+- Exclusive: Exclusive access
+- Don't Reconnect
+
+✅ **Validation**
+- Name cannot be empty
+- Name must be unique
+- Valid channel range
+- Real-time error display
+
+✅ **After Creation**
+- Show in graph automatically
+- Display in Nodes list
+- Enable immediate connections
+- Show success notification
+
+### Implementation Steps
+
+1. Add "Create Virtual Node" menu item
+2. Create GTK4 dialog widget
+3. Implement form validation
+4. Connect to library API
+5. Handle creation result
+6. Auto-refresh graph
+7. UI tests (5+)
+
+---
+
+## 🖥️ pw-tui Virtual Node Creation
+
+### Menu Integration
+
+**Main Menu:** `Create → Virtual Node` or press `V`
+
+### Multi-Step Wizard
+
+#### Step 1: Type & Naming
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ CREATE VIRTUAL NODE                                                        │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ Type:                                                                      │
+│ ○ Sink       - Audio output device                                        │
+│ ○ Source     - Audio input device                                         │
+│ ○ Filter     - Audio filter/processor                                     │
+│ ○ Loopback   - Virtual audio pair                                         │
+│                                                                            │
+│ Name: [_____________________________________]                            │
+│       (e.g., "Recording", "VST Processing")                              │
+│                                                                            │
+│ Description: [_______________________________]                             │
+│                                                                            │
+│ Use preset: [Default ▼]                                                   │
+│   • Default      • Loopback  • Recording                                  │
+│   • Monitoring   • Null      • Custom                                     │
+│                                                                            │
+│ [Next] [Cancel]                                                           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
 
 **Keyboard Navigation:**
-```
-↑/↓      : Navigate nodes
-Enter    : Show properties
-Space    : Toggle details
-D        : Delete node
-P        : Pause/Resume
-M        : Monitor node
-```
+- `Tab`/`Shift+Tab` : Navigate fields
+- `↑/↓` : Change preset/type options
+- `Enter` : Confirm and next
+- `Q` : Cancel
 
-#### 3. **Ports Management Panel**
+#### Step 2: Audio Configuration
 
 ```
-┌──────────────────────────────────────┐
-│ PORTS - Node: Speakers (ID: 50)      │
-├──────────────────────────────────────┤
-│ ID   Name      Direction  Type        │
-│ 105  Left      Output     Audio       │
-│ 106  Right     Output     Audio       │
-│                                      │
-│ [Connect to...] [Disconnect] [Info]  │
-└──────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│ VIRTUAL NODE - AUDIO CONFIG                                                │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ Channels:        [2 ▲ ▼] (1-8)                                            │
+│ Sample Rate:     [48000 ▼]  44.1k 48k 96k 192k                            │
+│ Bit Depth:       [32 ▼]     16 24 32                                      │
+│ Channel Layout:  [FL FR ▼]                                                │
+│                                                                            │
+│ ☐ Passive    (Don't hold graph playing)                                   │
+│ ☐ Virtual    (Mark as virtual node)                                       │
+│ ☐ Exclusive  (Exclusive access)                                           │
+│ ☐ DontReconnect                                                            │
+│                                                                            │
+│ [< Back] [Create] [Cancel]                                               │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### 4. **Links Management Panel**
+**Interactive Elements:**
+- Spinbox for channels (↑/↓)
+- Dropdown for sample rate
+- Dropdown for bit depth
+- Dropdown for layout
+- Checkboxes for options (Space to toggle)
+
+#### Step 3: Review & Confirm
 
 ```
-┌────────────────────────────────────────┐
-│ LINKS (6 total)                        │
-├────────────────────────────────────────┤
-│ Microphone (42:0)  ──→ Recording (52:0)│
-│ System In (51:0)   ──→ Recording (52:1)│
-│ Browser (48:1)     ──→ Speakers (50:0) │
-│ Microphone (42:0)  ──→ Speakers (50:1) │
-│ Equalizer (49:0)   ──→ Recording (52:0)│
-│ System In (51:1)   ──→ Speakers (50:1) │
-│                                        │
-│ [Delete] [Properties] [Monitor]        │
-└────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│ REVIEW - VIRTUAL NODE CONFIG                                               │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ Name:            Recording                                                 │
+│ Type:            Sink (Audio Output)                                       │
+│ Description:     Recording virtual sink                                    │
+│ Channels:        2 (Stereo)                                                │
+│ Sample Rate:     48000 Hz                                                  │
+│ Bit Depth:       32-bit                                                    │
+│ Layout:          Front Left + Right                                        │
+│ Passive:         Yes                                                       │
+│                                                                            │
+│ This node will be available in the graph immediately.                     │
+│ You can connect other nodes to it.                                        │
+│                                                                            │
+│ [< Back] [Create] [Cancel]                                               │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### 5. **Real-Time Statistics View**
+#### Success Confirmation
 
 ```
-┌─────────────────────────────────────────┐
-│ STATISTICS                              │
-├─────────────────────────────────────────┤
-│ Active Nodes:        4 / 12             │
-│ Active Ports:        8 / 24             │
-│ Active Links:        6 / 12             │
-│ Average Latency:     2.14 ms            │
-│ CPU Usage:           0.23%              │
-│ Memory Usage:        12.3 MB            │
-│ Uptime:              2h 43m 12s         │
-│                                         │
-│ Recent Events:                          │
-│ - Link created: Mic → Recording (10s)  │
-│ - Node started: Browser (45s)          │
-│ - Link deleted: Browser → Speakers (2m)│
-│ - Node paused: System In (5m)          │
-│                                         │
-└─────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│ ✓ Virtual Node Created Successfully                                        │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ Recording (ID: 100)                                                        │
+│ ├─ Left (FL)      [Input Port]                                             │
+│ └─ Right (FR)     [Input Port]                                             │
+│                                                                            │
+│ You can now route audio to this node.                                     │
+│                                                                            │
+│ [OK] [Show in Graph]                                                      │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### 6. **Node Properties Editor**
+### Keyboard Shortcuts
 
 ```
-┌──────────────────────────────────────────┐
-│ NODE PROPERTIES - Speakers               │
-├──────────────────────────────────────────┤
-│ Basic:                                   │
-│  ID:                     50              │
-│  Name:                   Speakers        │
-│  Type:                   Playback ▼      │
-│  State:                  Running ▼       │
-│                                          │
-│ Audio Configuration:                     │
-│  Channels:               2 ▲ ▼ (1-8)    │
-│  Sample Rate:            48000 Hz ▼      │
-│  Period Size:            1024            │
-│                                          │
-│ Advanced:                                │
-│  ☑ Use system defaults                   │
-│  ☐ Enable soft volume                    │
-│  ☐ Monitor all inputs                    │
-│                                          │
-│ [Save] [Cancel] [Reset to Defaults]      │
-└──────────────────────────────────────────┘
+Global:
+  V           : Create virtual node
+  Ctrl+C      : Cancel wizard
+  Ctrl+Z      : Undo (undo last step)
+  Q           : Quit wizard
+
+In Wizard:
+  Tab         : Next field
+  Shift+Tab   : Previous field
+  ↑/↓         : Change dropdown/option
+  Enter       : Confirm/Next step
+  Space       : Toggle checkbox
+  Backspace   : Delete character in text field
 ```
 
-#### 7. **Link Creation Wizard**
+### Implementation Steps
 
-```
-┌───────────────────────────────────────┐
-│ CREATE NEW LINK                       │
-├───────────────────────────────────────┤
-│ Step 1: Select Source Node            │
-│ ┌─────────────────────────────────────┐ │
-│ │ Microphone (42)           [Selected]│ │
-│ │ System In (51)                      │ │
-│ │ Browser (48)                        │ │
-│ │ Equalizer (49)                      │ │
-│ └─────────────────────────────────────┘ │
-│                                         │
-│ [Back] [Next]                           │
-└───────────────────────────────────────┘
-```
+1. Add "Create" menu option
+2. Implement wizard framework (3 steps)
+3. Step 1: Type selection & naming
+4. Step 2: Audio configuration
+5. Step 3: Review & confirm
+6. Connect to library API
+7. Handle creation result
+8. Display success/error
+9. UI tests (8+)
+10. Integration tests (3+)
 
-```
-┌───────────────────────────────────────┐
-│ CREATE NEW LINK                       │
-├───────────────────────────────────────┤
-│ Step 2: Select Target Node            │
-│ ┌─────────────────────────────────────┐ │
-│ │ Speakers (50)                       │ │
-│ │ Recording (52)            [Selected]│ │
-│ │ Equalizer (49)                      │ │
-│ │ System Out (51)                     │ │
-│ └─────────────────────────────────────┘ │
-│                                         │
-│ [Back] [Next]                           │
-└───────────────────────────────────────┘
+---
+
+## 🖨️ CLI Tool: pw-virtual
+
+### Commands
+
+**Create Virtual Node:**
+```bash
+pw-virtual create sink \
+  --name "Recording" \
+  --channels 2 \
+  --rate 48000 \
+  --passive
+
+pw-virtual create loopback \
+  --name "Virtual Pair" \
+  --preset loopback
 ```
 
-```
-┌───────────────────────────────────────┐
-│ CREATE NEW LINK                       │
-├───────────────────────────────────────┤
-│ Step 3: Configure Link                │
-│                                       │
-│ Source Port:  Microphone:Left  [▼]   │
-│ Target Port:  Recording:Left   [▼]   │
-│ Format:       Audio/PCM        [✓]   │
-│ Channels:     Mono (1)         [✓]   │
-│ Sample Rate:  48000 Hz         [✓]   │
-│ Volume:       100%  [─────●─────]   │
-│                                       │
-│ [Back] [Create] [Cancel]              │
-└───────────────────────────────────────┘
+**List Virtual Nodes:**
+```bash
+pw-virtual list
+
+# Output:
+# ID   Name           Type      Channels  Rate     Passive
+# 100  Recording      Sink      2         48000    yes
+# 101  Virtual Pair   Loopback  2         48000    no
 ```
 
-#### 8. **Keyboard-Driven Navigation**
+**Get Node Info:**
+```bash
+pw-virtual info 100
 
-**Global Shortcuts:**
-```
-Ctrl+C / Q    : Quit application
-Tab           : Switch between panels
-Ctrl+H        : Show help
-Ctrl+S        : Save current configuration
-Ctrl+L        : Load configuration
-Ctrl+R        : Refresh all data
-Ctrl+Z        : Undo last action
-```
-
-**Node Panel Shortcuts:**
-```
-↑/↓           : Navigate nodes
-Enter         : Show properties
-Space         : Toggle expand/collapse
-A             : Add new link from node
-D             : Delete node
-P             : Pause/Resume node
-M             : Monitor node
-E             : Edit node settings
+# Output:
+# Node ID: 100
+# Name: Recording
+# Type: Sink (Audio Output)
+# Description: Recording virtual sink
+# Channels: 2 (FL FR)
+# Sample Rate: 48000 Hz
+# Bit Depth: 32-bit
+# Passive: yes
+# Ports:
+#   - 100:0 [Left/Front Left]
+#   - 100:1 [Right/Front Right]
 ```
 
-**Links Panel Shortcuts:**
-```
-↑/↓           : Navigate links
-D             : Delete selected link
-R             : Reroute link
-P             : Show link properties
-M             : Monitor link data
-C             : Show channel info
+**Delete Virtual Node:**
+```bash
+pw-virtual delete 100
+# Virtual node 100 deleted
 ```
 
-#### 9. **Mouse Support**
-
-**Features:**
-- Click to select items
-- Double-click to edit/open
-- Right-click for context menu
-- Scroll wheel for navigation
-- Drag to select multiple items
-
-#### 10. **Configuration Management**
-
-**Save Configuration:**
-```
-Menu: Config → Save Current Setup
-File: ~/.config/pipewire/tui_config.json
-
-Stores:
-- All node settings
-- All link configurations
-- UI preferences
-- Monitoring profiles
+**Update Property:**
+```bash
+pw-virtual update 100 node.description "New Description"
+# Property updated
 ```
 
-**Load Configuration:**
-```
-Menu: Config → Load Setup
-  ├─ Default Setup
-  ├─ Gaming Setup (high latency tolerance)
-  ├─ Recording Setup (quality priority)
-  ├─ Streaming Setup (low latency)
-  └─ Last Used
-```
+---
 
-#### 11. **Event System & Monitoring**
+## 🔧 Virtual Node Properties
 
-**Real-Time Event Log:**
+**Common Properties:**
 ```
-[14:32:15] NODE_CREATED    Browser (ID: 48)
-[14:32:18] LINK_CREATED    Mic → Recording
-[14:32:45] LINK_DELETED    Browser → Speakers
-[14:33:02] NODE_STATE      Recording: Idle → Running
-[14:33:15] PORT_FORMAT     Speakers:Left: 48kHz → 44.1kHz
-[14:34:00] ERROR           Recording: Buffer overrun
-```
+node.name              - Name of the node
+node.description       - Description
+node.nick              - Short name
+node.virtual           - Is virtual (bool)
+node.passive           - Don't hold graph (bool)
+node.exclusive         - Exclusive access (bool)
+node.dont-reconnect    - Don't auto-reconnect (bool)
+node.latency           - Latency (format: "samples/rate")
+node.lock-quantum      - Lock quantum size
+priority.driver        - Priority level
 
-**Filtering Events:**
-```
-Show:  ☑ Node Events  ☑ Link Events  ☑ Error Events
-       ☑ State Changes ☑ Format Changes  ☑ All
-       
-Level: ┌─ Debug    ┌─ Info    ☑ Warning   ☑ Error
+audio.position         - Channel layout ("FL FR")
+audio.format           - Sample format ("F32", "S32", etc.)
+audio.rate             - Sample rate (44100, 48000, etc.)
 ```
 
-#### 12. **Performance Monitoring**
+---
 
-**Real-Time Metrics:**
-- Frame rate (target: 60 FPS)
-- Memory usage (VirtualSize)
-- CPU usage per operation
-- Latency histogram
-- Jitter measurements
+## 📊 Virtual Node Lifecycle
 
-#### 13. **Help System**
-
-**Built-in Help:**
 ```
-Ctrl+H → Show complete help
+1. Create
+   ↓
+   Client calls CreateVirtualNode(config)
+   ↓
+   Library sends to daemon
+   ↓
+   Daemon creates spa-node via factory
+   ↓
+   Daemon returns node ID to client
+   ↓
+   VirtualNode object created with ID
 
-- Keyboard shortcuts reference
-- Common workflows
-- Troubleshooting guide
-- Configuration examples
+2. Active (In Graph)
+   ↓
+   Node is available in registry
+   ↓
+   Ports are created
+   ↓
+   Can be connected to other nodes
+   ↓
+   Audio can flow through
+
+3. Modify
+   ↓
+   UpdateProperty(key, value)
+   ↓
+   Library sends to daemon
+   ↓
+   Daemon updates property
+   ↓
+   Client receives update
+
+4. Delete
+   ↓
+   Delete() method called
+   ↓
+   Library sends delete request
+   ↓
+   Daemon removes node
+   ↓
+   All links to node are destroyed
+   ↓
+   Node removed from registry
 ```
+
+---
+
+## 🎯 Error Handling
+
+**Potential Errors:**
+
+```go
+// VirtualNodeError types
+type VirtualNodeCreateError struct {
+    Reason string // "invalid_config", "factory_not_available", etc.
+}
+
+type VirtualNodePropertyError struct {
+    Property string
+    Message  string
+}
+
+type VirtualNodeNotFoundError struct {
+    NodeID uint32
+}
+```
+
+**Example Handling:**
+
+```go
+config := pw.VirtualNodeConfig{
+    Name: "Recording",
+    Channels: 0, // Invalid!
+}
+
+_, err := client.CreateVirtualNode(config)
+if err != nil {
+    switch err := err.(type) {
+    case *pw.VirtualNodeCreateError:
+        fmt.Printf("Creation failed: %s\n", err.Reason)
+    default:
+        fmt.Printf("Error: %v\n", err)
+    }
+}
+```
+
+---
+
+## ✅ Testing Strategy
+
+**Unit Tests (Core API):**
+- Create virtual node with valid config
+- Create with invalid config (validation)
+- Update node properties
+- Delete node
+- Get node properties
+- Preset loading
+
+**Integration Tests:**
+- Create node in live daemon
+- Verify node appears in registry
+- Connect nodes to virtual node
+- Monitor data flow
+- Delete and verify removal
+
+**UI Tests (pw-gui):**
+- Dialog opens/closes
+- Form validation
+- Preset loading
+- Node creation
+- Success/error display
+
+**UI Tests (pw-tui):**
+- Wizard navigation (all 3 steps)
+- Keyboard input handling
+- Form validation
+- Node creation
+- Message display
+
+---
+
+## 📝 Documentation Needed
+
+- ✅ GoDoc API documentation
+- ✅ Usage guide with examples
+- ✅ Preset reference
+- ✅ CLI reference
+- ✅ Architecture diagrams
+- ✅ Troubleshooting guide
 
 ---
 
@@ -908,12 +1058,20 @@ go tool cover -html=coverage.out
 - [x] **#32** All GoDoc comments added
 - [x] **#33** CLI tools implemented
 - [x] **#34** TUI event handlers completed
-- [ ] **v0.3.0** - Issue #42: Complete pw-gui rendering
-- [ ] **v0.3.0** - Issue #43: pw-connect link creation
-- [ ] **v0.3.0** - Issue #44: Complete CI/CD pipeline
+- [ ] **#46** Virtual node creation API & UI (IN PROGRESS)
+- [ ] **#42** Complete pw-gui rendering
+- [ ] **#43** pw-connect link creation
+- [ ] **#44** Complete CI/CD pipeline
 
 ---
 
-**Next release: v0.3.0 (9-13 hours estimated)** 🚀
+**Next: Implement Issue #46 - Virtual Node Creation** 🚀
 
-Need more details? Check the GitHub issues for specific implementation guides.
+Implementation priority:
+1. Core API (4-5h)
+2. pw-gui integration (2-3h)
+3. pw-tui integration (2-3h)
+4. CLI tool (1h)
+
+Estimated total effort: **6-8 hours**
+

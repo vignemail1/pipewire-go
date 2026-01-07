@@ -188,6 +188,38 @@ func NewLinkValidator(client *Client) *LinkValidator {
 	return &LinkValidator{client: client}
 }
 
+func (c *Client) CreateLink(output, input *Port, params *LinkParams) (*Link, error) {
+	if output == nil || input == nil {
+		return nil, fmt.Errorf("ports cannot be nil")
+	}
+
+	protoClient := NewProtocolClient(c.connection, c.registryID, c.coreID, c.logger)
+
+	linkID, err := protoClient.CreateLink(output.ID(), input.ID(), params.Properties)
+	if err != nil {
+		return nil, fmt.Errorf("protocol error: %w", err)
+	}
+
+	link := NewLink(linkID, input, output, c)
+	c.registry.RegisterLink(link)
+	return link, nil
+}
+
+func (c *Client) RemoveLink(link *Link) error {
+	if link == nil || link.ID() == 0 {
+		return fmt.Errorf("invalid link")
+	}
+
+	protoClient := NewProtocolClient(c.connection, c.registryID, c.coreID, c.logger)
+
+	if err := protoClient.DestroyLink(link.ID()); err != nil {
+		return fmt.Errorf("protocol error: %w", err)
+	}
+
+	c.removeLink(link.ID())
+	return nil
+}
+
 // CanCreateLink checks if a link can be created between two ports
 // Returns (canCreate, reason)
 func (lv *LinkValidator) CanCreateLink(outputPort, inputPort *Port) (bool, string) {

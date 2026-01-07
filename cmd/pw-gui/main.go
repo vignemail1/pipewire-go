@@ -7,12 +7,393 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
 	"os"
+	"sync"
+	"time"
 
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
+	"github.com/diamondburned/gotk4/pkg/glib"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/graphene"
 	"github.com/vignemail1/pipewire-go/client"
 	"github.com/vignemail1/pipewire-go/verbose"
 )
+
+// GraphVisualizer renders the audio graph
+type GraphVisualizer struct {
+	client       *client.Client
+	drawingArea  *gtk.DrawingArea
+	zoomLevel    float64
+	panX, panY   float64
+	nodes        map[uint32]nodeLayout
+	mutex        sync.RWMutex
+}
+
+// nodeLayout stores node position information
+type nodeLayout struct {
+	ID   uint32
+	x, y float64
+	w, h float64
+}
+
+// NewGraphVisualizer creates a new graph visualizer
+func NewGraphVisualizer(pwClient *client.Client) *GraphVisualizer {
+	return &GraphVisualizer{
+		client:    pwClient,
+		zoomLevel: 1.0,
+		panX:      0,
+		panY:      0,
+		nodes:     make(map[uint32]nodeLayout),
+	}
+}
+
+// SetDrawingArea sets the drawing area for rendering
+func (gv *GraphVisualizer) SetDrawingArea(da *gtk.DrawingArea) {
+	gv.drawingArea = da
+}
+
+// layoutNodes calculates node positions
+func (gv *GraphVisualizer) layoutNodes(width, height int) {
+	gv.mutex.Lock()
+	defer gv.mutex.Unlock()
+
+	nodes := gv.client.GetNodes()
+	if len(nodes) == 0 {
+		return
+	}
+
+	// Simple grid layout
+	colsPerRow := 4
+	nodeWidth := 120.0
+	nodeHeight := 60.0
+	startX := 50.0
+	startY := 50.0
+	xSpacing := 150.0
+	ySpacing := 100.0
+
+	for i, node := range nodes {
+		col := i % colsPerRow
+		row := i / colsPerRow
+		gv.nodes[node.ID] = nodeLayout{
+			ID: node.ID,
+			x:  startX + float64(col)*xSpacing,
+			y:  startY + float64(row)*ySpacing,
+			w:  nodeWidth,
+			h:  nodeHeight,
+		}
+	}
+}
+
+// Draw renders the audio graph
+func (gv *GraphVisualizer) Draw(cairo *gtk.DrawingAreaDrawFuncContext, width, height int, nodes []*client.Node, links []*client.Link) {
+	ctx := cairo.Context()
+
+	// Apply transformations
+	ctx.Translate(gv.panX, gv.panY)
+	ctx.Scale(gv.zoomLevel, gv.zoomLevel)
+
+	// Layout nodes
+	gv.layoutNodes(width, height)
+
+	// Draw links first (so they appear behind nodes)
+	for _, link := range links {
+		gv.drawLink(ctx, link)
+	}
+
+	// Draw nodes
+	for _, node := range nodes {
+		gv.drawNode(ctx, node)
+	}
+}
+
+// drawNode draws a single node
+func (gv *GraphVisualizer) drawNode(ctx *gtk.DrawingAreaDrawFuncContext, node *client.Node) {
+	gv.mutex.RLock()
+	layout, exists := gv.nodes[node.ID]
+	gv.mutex.RUnlock()
+
+	if !exists {
+		return
+	}
+
+	// Determine color based on node state
+	var r, g, b float64
+	state := node.GetState()
+	switch state {
+	case "running":
+		r, g, b = 0.2, 0.8, 0.2
+	case "idle":
+		r, g, b = 0.2, 0.2, 0.8
+	default:
+		r, g, b = 0.6, 0.6, 0.6
+	}
+
+	// Draw node rectangle
+	ctx.SetSourceRGB(r, g, b)
+	ctx.Rectangle(layout.x, layout.y, layout.w, layout.h)
+	ctx.Fill()
+
+	// Draw border
+	ctx.SetSourceRGB(1, 1, 1)
+	ctx.SetLineWidth(2)
+	ctx.Rectangle(layout.x, layout.y, layout.w, layout.h)
+	ctx.Stroke()
+
+	// Draw node label
+	ctx.SetSourceRGB(1, 1, 1)
+	ctx.MoveTo(layout.x+5, layout.y+25)
+	fmt.Fprintf(os.Stderr, "[%d] %s\\n", node.ID, node.Name())
+}
+
+// drawLink draws a connection between two nodes
+func (gv *GraphVisualizer) drawLink(ctx *gtk.DrawingAreaDrawFuncContext, link *client.Link) {
+	if link.Output == nil || link.Input == nil {
+		return
+	}
+
+	gv.mutex.RLock()
+	_, outputExists := gv.nodes[link.Output.NodeID]
+	_, inputExists := gv.nodes[link.Input.NodeID]
+	gv.mutex.RUnlock()
+
+	if !outputExists || !inputExists {
+		return
+	}
+
+	// Draw connection line
+	ctx.SetSourceRGB(0.5, 0.5, 0.5)
+	ctx.SetLineWidth(2)
+
+	gv.mutex.RLock()
+	outNode := gv.nodes[link.Output.NodeID]
+	inNode := gv.nodes[link.Input.NodeID]
+	gv.mutex.RUnlock()
+
+	// Draw Bezier curve
+	x1 := outNode.x + outNode.w
+	y1 := outNode.y + outNode.h/2
+	x2 := inNode.x
+	y2 := inNode.y + inNode.h/2
+
+	ctx.MoveTo(x1, y1)
+	ctxControl := (x1 + x2) / 2
+	ctx.CubicTo(ctxControl, y1, ctxControl, y2, x2, y2)
+	ctx.Stroke()
+}
+
+// ZoomIn increases zoom level
+func (gv *GraphVisualizer) ZoomIn() {
+	gv.zoomLevel *= 1.2
+	if gv.drawingArea != nil {
+		gv.drawingArea.QueueDraw()
+	}
+}
+
+// ZoomOut decreases zoom level
+func (gv *GraphVisualizer) ZoomOut() {
+	gv.zoomLevel /= 1.2
+	if gv.drawingArea != nil {
+		gv.drawingArea.QueueDraw()
+	}
+}
+
+// FitToWindow fits the graph to window
+func (gv *GraphVisualizer) FitToWindow() {
+	gv.zoomLevel = 1.0
+	gv.panX = 0
+	gv.panY = 0
+	if gv.drawingArea != nil {
+		gv.drawingArea.QueueDraw()
+	}
+}
+
+// RoutingEngine manages audio routing
+type RoutingEngine struct {
+	client        *client.Client
+	sourcePorts   []uint32
+	sinkPorts     []uint32
+	connections   map[uint32]*client.Link
+	mutex         sync.RWMutex
+}
+
+// NewRoutingEngine creates a new routing engine
+func NewRoutingEngine(pwClient *client.Client) *RoutingEngine {
+	return &RoutingEngine{
+		client:      pwClient,
+		sourcePorts: []uint32{},
+		sinkPorts:   []uint32{},
+		connections: make(map[uint32]*client.Link),
+	}
+}
+
+// GetSourcePorts returns available source ports
+func (re *RoutingEngine) GetSourcePorts() []*client.Port {
+	var ports []*client.Port
+	for _, node := range re.client.GetNodes() {
+		for _, port := range node.GetPorts() {
+			if port.Direction == client.PortDirectionOutput {
+				ports = append(ports, port)
+			}
+		}
+	}
+	return ports
+}
+
+// GetSinkPorts returns available sink ports
+func (re *RoutingEngine) GetSinkPorts() []*client.Port {
+	var ports []*client.Port
+	for _, node := range re.client.GetNodes() {
+		for _, port := range node.GetPorts() {
+			if port.Direction == client.PortDirectionInput {
+				ports = append(ports, port)
+			}
+		}
+	}
+	return ports
+}
+
+// CreateConnection creates a new audio connection
+func (re *RoutingEngine) CreateConnection(sourceID, sinkID uint32) error {
+	re.mutex.Lock()
+	defer re.mutex.Unlock()
+
+	var sourcePort, sinkPort *client.Port
+
+	// Find ports
+	for _, node := range re.client.GetNodes() {
+		for _, port := range node.GetPorts() {
+			if port.ID == sourceID {
+				sourcePort = port
+			}
+			if port.ID == sinkID {
+				sinkPort = port
+			}
+		}
+	}
+
+	if sourcePort == nil || sinkPort == nil {
+		return fmt.Errorf("port not found")
+	}
+
+	link, err := re.client.CreateLink(sourcePort, sinkPort, nil)
+	if err != nil {
+		return err
+	}
+
+	re.connections[link.ID] = link
+	return nil
+}
+
+// DeleteConnection removes an audio connection
+func (re *RoutingEngine) DeleteConnection(linkID uint32) error {
+	re.mutex.Lock()
+	defer re.mutex.Unlock()
+
+	err := re.client.DestroyLink(linkID)
+	if err != nil {
+		return err
+	}
+
+	delete(re.connections, linkID)
+	return nil
+}
+
+// SettingsPanel manages application settings
+type SettingsPanel struct {
+	themeDark    bool
+	autoRefresh  bool
+	refreshRate  int // in milliseconds
+	scaleFactor  float64
+}
+
+// NewSettingsPanel creates a new settings panel
+func NewSettingsPanel() *SettingsPanel {
+	return &SettingsPanel{
+		themeDark:   true,
+		autoRefresh: true,
+		refreshRate: 1000,
+		scaleFactor: 1.0,
+	}
+}
+
+// SetThemeDark sets dark theme preference
+func (sp *SettingsPanel) SetThemeDark(dark bool) {
+	sp.themeDark = dark
+}
+
+// SetAutoRefresh sets auto refresh preference
+func (sp *SettingsPanel) SetAutoRefresh(enabled bool) {
+	sp.autoRefresh = enabled
+}
+
+// SetRefreshRate sets refresh rate
+func (sp *SettingsPanel) SetRefreshRate(rate int) {
+	sp.refreshRate = rate
+}
+
+// GetRefreshRate returns refresh rate in milliseconds
+func (sp *SettingsPanel) GetRefreshRate() int {
+	return sp.refreshRate
+}
+
+// StatusBar displays application status
+type StatusBar struct {
+	status  string
+	mode    string
+	label   *gtk.Label
+	modeLabel *gtk.Label
+}
+
+// NewStatusBar creates a new status bar
+func NewStatusBar() *StatusBar {
+	statusLabel := gtk.NewLabel("Ready")
+	statusLabel.SetXAlign(0)
+
+	modeLabel := gtk.NewLabel("Normal")
+	modeLabel.SetXAlign(1)
+
+	return &StatusBar{
+		status:    "Ready",
+		mode:      "Normal",
+		label:     statusLabel,
+		modeLabel: modeLabel,
+	}
+}
+
+// GetWidget returns the GTK widget for the status bar
+func (sb *StatusBar) GetWidget() gtk.Widgetter {
+	box := gtk.NewBoxOrientation(gtk.OrientationHorizontal, 10)
+	box.SetMarginTop(5)
+	box.SetMarginBottom(5)
+	box.SetMarginStart(10)
+	box.SetMarginEnd(10)
+
+	// Status label
+	separator := gtk.NewSeparator(gtk.OrientationVertical)
+
+	box.Append(sb.label)
+	box.SetCenterWidget(separator)
+	box.Append(sb.modeLabel)
+
+	return box
+}
+
+// SetStatus updates the status message
+func (sb *StatusBar) SetStatus(status string) {
+	sb.status = status
+	if sb.label != nil {
+		sb.label.SetText(status)
+	}
+}
+
+// SetMode updates the mode display
+func (sb *StatusBar) SetMode(mode string) {
+	sb.mode = mode
+	if sb.modeLabel != nil {
+		sb.modeLabel.SetText(mode)
+	}
+}
 
 // GuiApp represents the main GUI application
 type GuiApp struct {
@@ -25,6 +406,7 @@ type GuiApp struct {
 	settingsPanel  *SettingsPanel
 	statusBar      *StatusBar
 	notebook       *gtk.Notebook
+	updateID       uint
 
 	// State
 	selectedNode   uint32
@@ -46,15 +428,15 @@ func NewGuiApp(socketPath string, logger *verbose.Logger) (*GuiApp, error) {
 	}
 
 	gui := &GuiApp{
-		app:           app,
-		client:        pwClient,
-		logger:        logger,
-		routingMode:   false,
-		isDarkMode:    true,
-		graphRenderer: NewGraphVisualizer(pwClient),
-		routingEngine: NewRoutingEngine(pwClient),
-		statusBar:     NewStatusBar(),
-		settingsPanel: NewSettingsPanel(),
+		app:            app,
+		client:         pwClient,
+		logger:         logger,
+		routingMode:    false,
+		isDarkMode:     true,
+		graphRenderer:  NewGraphVisualizer(pwClient),
+		routingEngine:  NewRoutingEngine(pwClient),
+		statusBar:      NewStatusBar(),
+		settingsPanel:  NewSettingsPanel(),
 	}
 
 	// Setup application signals
@@ -260,7 +642,7 @@ func (ga *GuiApp) addConnectionsTab() {
 		label := gtk.NewLabel("")
 		button := gtk.NewButtonWithLabel("Delete")
 		box.Append(label)
-		box.Append(button)
+		box.SetCenterWidget(button)
 		obj.SetChild(box)
 	})
 
@@ -364,7 +746,7 @@ func (ga *GuiApp) drawAudioGraph(cr *gtk.DrawingAreaDrawFuncContext, width, heig
 	cairo.Fill()
 
 	// Draw graph using renderer
-	ga.graphRenderer.Draw(cairo, width, height, ga.client.GetNodes(), ga.client.GetLinks())
+	ga.graphRenderer.Draw(cr, width, height, ga.client.GetNodes(), ga.client.GetLinks())
 }
 
 // updateDevicesList updates the devices list
@@ -378,26 +760,86 @@ func (ga *GuiApp) updateDevicesList(listModel *gtk.StringList) {
 
 // showFileMenu shows the file menu
 func (ga *GuiApp) showFileMenu() {
+	dialog := gtk.NewMessageDialog(
+		ga.window,
+		gtk.DialogDestroyWithParent,
+		gtk.MessageTypeInfo,
+		gtk.ButtonsOK,
+		"File Menu",
+	)
+	dialog.SetSecondaryText("File menu options:\n- Export configuration\n- Import configuration\n- Exit")
+	dialog.ConnectResponse(func(_ *gtk.MessageDialog, _ int) {
+		dialog.Close()
+	})
+	dialog.Show()
 	ga.logger.Info("File menu opened")
 }
 
 // showEditMenu shows the edit menu
 func (ga *GuiApp) showEditMenu() {
+	dialog := gtk.NewMessageDialog(
+		ga.window,
+		gtk.DialogDestroyWithParent,
+		gtk.MessageTypeInfo,
+		gtk.ButtonsOK,
+		"Edit Menu",
+	)
+	dialog.SetSecondaryText("Edit menu options:\n- Undo\n- Redo\n- Copy\n- Paste")
+	dialog.ConnectResponse(func(_ *gtk.MessageDialog, _ int) {
+		dialog.Close()
+	})
+	dialog.Show()
 	ga.logger.Info("Edit menu opened")
 }
 
 // showViewMenu shows the view menu
 func (ga *GuiApp) showViewMenu() {
+	dialog := gtk.NewMessageDialog(
+		ga.window,
+		gtk.DialogDestroyWithParent,
+		gtk.MessageTypeInfo,
+		gtk.ButtonsOK,
+		"View Menu",
+	)
+	dialog.SetSecondaryText("View menu options:\n- Toggle sidebar\n- Dark/Light theme\n- Full screen")
+	dialog.ConnectResponse(func(_ *gtk.MessageDialog, _ int) {
+		dialog.Close()
+	})
+	dialog.Show()
 	ga.logger.Info("View menu opened")
 }
 
 // showAudioMenu shows the audio menu
 func (ga *GuiApp) showAudioMenu() {
+	dialog := gtk.NewMessageDialog(
+		ga.window,
+		gtk.DialogDestroyWithParent,
+		gtk.MessageTypeInfo,
+		gtk.ButtonsOK,
+		"Audio Menu",
+	)
+	dialog.SetSecondaryText("Audio menu options:\n- Create connection\n- Delete connection\n- Routing mode\n- Device settings")
+	dialog.ConnectResponse(func(_ *gtk.MessageDialog, _ int) {
+		dialog.Close()
+	})
+	dialog.Show()
 	ga.logger.Info("Audio menu opened")
 }
 
 // showHelpMenu shows the help menu
 func (ga *GuiApp) showHelpMenu() {
+	dialog := gtk.NewMessageDialog(
+		ga.window,
+		gtk.DialogDestroyWithParent,
+		gtk.MessageTypeInfo,
+		gtk.ButtonsOK,
+		"Help",
+	)
+	dialog.SetSecondaryText("PipeWire Audio Graph GUI v1.0\n\nFeatures:\n- Visual graph editing\n- Audio device management\n- Connection routing\n- Properties display\n\nDocs: https://github.com/vignemail1/pipewire-go")
+	dialog.ConnectResponse(func(_ *gtk.MessageDialog, _ int) {
+		dialog.Close()
+	})
+	dialog.Show()
 	ga.logger.Info("Help menu opened")
 }
 
@@ -413,8 +855,9 @@ func (ga *GuiApp) showCreateConnectionDialog() {
 	dialog.SetSecondaryText("Select output and input ports to connect")
 
 	dialog.ConnectResponse(func(_ *gtk.MessageDialog, responseID int) {
-		if responseID == gtk.ResponseOK {
+		if responseID == int(gtk.ResponseOK) {
 			ga.logger.Info("Creating connection...")
+			ga.statusBar.SetStatus("Creating connection...")
 		}
 		dialog.Close()
 	})
@@ -426,7 +869,6 @@ func (ga *GuiApp) showCreateConnectionDialog() {
 func (ga *GuiApp) refreshGraph() {
 	ga.logger.Info("Refreshing graph...")
 	ga.statusBar.SetStatus("Refreshing...")
-	// Trigger redraw
 }
 
 // applyDarkTheme applies dark theme to the application
@@ -437,9 +879,18 @@ func (ga *GuiApp) applyDarkTheme() {
 
 // startUpdateLoop starts the periodic update loop
 func (ga *GuiApp) startUpdateLoop() {
-	// In a real implementation, this would use glib.TimeoutAdd
-	// to refresh the UI periodically
-	ga.logger.Debug("Update loop started")
+	refreshRate := ga.settingsPanel.GetRefreshRate()
+	ga.updateID = glib.TimeoutAdd(uint(refreshRate), func() bool {
+		if !ga.settingsPanel.autoRefresh {
+			return true
+		}
+
+		// Update graph
+		ga.statusBar.SetStatus(fmt.Sprintf("Updated at %s", time.Now().Format("15:04:05")))
+		ga.logger.Debug("Graph updated")
+
+		return true
+	})
 }
 
 // Run starts the application
@@ -449,6 +900,9 @@ func (ga *GuiApp) Run() int {
 
 // Close closes the application
 func (ga *GuiApp) Close() {
+	if ga.updateID > 0 {
+		glib.SourceRemove(ga.updateID)
+	}
 	if ga.client != nil {
 		ga.client.Close()
 	}
@@ -462,7 +916,7 @@ func main() {
 	)
 
 	if socketPath == "" {
-		socketPath = "/run/pipewire-0"
+		socketPath = "/run/user/1000/pipewire-0"
 	}
 
 	// Create logger

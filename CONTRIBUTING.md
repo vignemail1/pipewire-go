@@ -1,407 +1,356 @@
-# Contributing to PipeWire Go Library
+# Contributing to pipewire-go
+
+Thank you for your interest in contributing to pipewire-go! This document provides guidelines and instructions for contributing.
 
 ## Code of Conduct
 
-Respectez les autres contributeurs. Les discussions techniques doivent rester constructives.
+We are committed to providing a welcoming and inclusive environment. Please be respectful of other contributors and users.
 
-## Avant de commencer
+## How to Contribute
 
-### Vérifier les issues existantes
-Consultez les GitHub Issues pour voir si quelque chose est déjà en cours.
+### Reporting Bugs
 
-### Discussions majeures
-Pour les changements majeurs (nouvelles interfaces, breaking changes), ouvrez une issue d'abord pour discussion.
+Before reporting a bug, please:
 
-## Processus de Contribution
+1. Check the [issue tracker](https://github.com/vignemail1/pipewire-go/issues) to see if it's already reported
+2. Try to reproduce the issue
+3. Gather information:
+   - Go version (`go version`)
+   - Operating system
+   - PipeWire version
+   - Minimal code to reproduce
 
-### 1. Fork et Clone
+When creating a bug report:
+
+```markdown
+## Description
+Clear description of what isn't working.
+
+## Steps to Reproduce
+1. Step 1
+2. Step 2
+3. ...
+
+## Expected Behavior
+What should happen.
+
+## Actual Behavior
+What actually happens.
+
+## Environment
+- Go version: 1.21
+- OS: Linux
+- PipeWire version: 0.3.x
+
+## Code Example
+// Minimal reproduction code
+```
+
+### Suggesting Features
+
+Feature requests are welcome! Please:
+
+1. Check if the feature has been requested before
+2. Describe the use case
+3. Explain why this feature would be useful
+4. Provide examples if possible
+
+### Pull Requests
+
+#### Before You Start
+
+1. Check the [roadmap](CHANGELOG.md#roadmap) to understand priorities
+2. Look at [open issues](https://github.com/vignemail1/pipewire-go/issues) for current work
+3. Fork the repository
+4. Create a feature branch from `main`
 
 ```bash
-git clone https://github.com/vignemail1/pipewire-go.git
-cd pipewire-go
+git checkout -b feature/your-feature-name
 ```
 
-### 2. Créer une branche
+#### Code Standards
+
+All code must:
+
+- [ ] Follow Go conventions and [Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments)
+- [ ] Pass `go fmt` formatting
+- [ ] Pass `go vet ./...` linting
+- [ ] Pass `golangci-lint run ./...` (if available)
+- [ ] Have 85%+ test coverage
+- [ ] Include proper error handling
+- [ ] Have clear comments for exported symbols
+- [ ] Use descriptive variable and function names
+
+#### Testing Requirements
+
+All changes must include tests:
 
 ```bash
-git checkout -b feature/ma-fonctionnalite
-# ou
-git checkout -b fix/mon-bug-fix
-```
+# Run tests locally
+go test -v ./...
 
-### 3. Développement
-
-#### Code Quality Standards
-
-**Format:**
-```bash
-go fmt ./...
-```
-
-**Linting:**
-```bash
-go vet ./...
-# Et si disponible:
-golangci-lint run
-```
-
-**Tests:**
-```bash
-go test ./... -v
-go test ./... -cover
-```
-
-**Zero CGO (obligatoire):**
-```bash
-CGO_ENABLED=0 go build ./...
-CGO_ENABLED=0 go test ./...
-```
-
-#### Style Guide
-
-- **Nommage:** 
-  - Packages: minuscule, court (`spa`, `core`, `client`)
-  - Types: PascalCase (`Node`, `Port`, `Link`)
-  - Méthodes/Functions: PascalCase pour exports, camelCase pour privés
-  - Constants: ALL_CAPS pour les constantes POD types
-
-- **Documentation:**
-  - Chaque export public a un commentaire
-  - Commentaires au-dessus des types/fonctions
-  - Exemples dans les commentaires pour les APIs complexes
-
-```go
-// Node represents a PipeWire audio/video node in the graph.
-// A node can have multiple ports (input/output) connected to other nodes.
-type Node struct {
-    ID    uint32
-    Name  string
-    ...
-}
-
-// GetPorts returns all ports of this node.
-// The direction parameter can be PortDirectionInput or PortDirectionOutput.
-func (n *Node) GetPorts(direction PortDirection) []*Port {
-    ...
-}
-```
-
-- **Error handling:**
-  - Toujours wrapper les erreurs avec contexte
-  - Utiliser `fmt.Errorf("context: %w", err)`
-  - Pas de panic dans la lib (sauf init)
-
-```go
-// ✅ Good
-if err := conn.SendMessage(id, opcode, payload); err != nil {
-    return fmt.Errorf("failed to send message to node %d: %w", id, err)
-}
-
-// ❌ Bad
-if err != nil {
-    panic(err)  // Never in library code
-}
-```
-
-#### Testing
-
-Chaque changement doit avoir des tests:
-
-```bash
-# Créer test_test.go pour chaque module
-go test ./spa -v
-go test ./core -v
-go test ./client -v
-
-# Coverage report
+# Check coverage
 go test -cover ./...
+
+# Generate coverage report
 go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 ```
 
-Exemple de test:
+Minimum coverage expectations:
+- New code: 85%+
+- Modified code: Maintain or improve coverage
+- Bug fixes: Include test that would fail without the fix
 
-```go
-// spa/pod_test.go
-package spa
+#### Commit Messages
 
-import "testing"
+Write clear, descriptive commit messages:
 
-func TestParseInt(t *testing.T) {
-    // Build a POD with an int
-    builder := NewPODBuilder()
-    if err := builder.WriteInt(42); err != nil {
-        t.Fatalf("Failed to write int: %v", err)
-    }
-    
-    // Parse it back
-    parser := NewPODParser(builder.Bytes())
-    pod, err := parser.ParsePOD()
-    if err != nil {
-        t.Fatalf("Failed to parse: %v", err)
-    }
-    
-    intPod, ok := pod.(*IntPOD)
-    if !ok {
-        t.Fatalf("Expected *IntPOD, got %T", pod)
-    }
-    
-    if intPod.Value != 42 {
-        t.Errorf("Expected 42, got %d", intPod.Value)
-    }
-}
 ```
+Add feature: Brief description
+
+Detailed explanation of what changed and why.
+Referrence relevant issues: Fixes #123
+```
+
+Format:
+- First line: "[type]: Brief description" (50 chars max)
+- Types: feat, fix, docs, style, refactor, perf, test, ci
+- Body: Detailed explanation (72 chars per line)
+- Reference issues: "Fixes #123", "Related to #456"
 
 #### Documentation
 
-Mettre à jour la doc si approprié:
+Update documentation for:
 
-- **README.md** - Pour changements d'API utilisateur
-- **ARCHITECTURE.md** - Pour changements d'architecture
-- **Godoc comments** - Pour toutes les changes de code
-- **Examples** - Pour nouvelles features
+- New public APIs (GoDoc comments)
+- Changed behavior (README.md)
+- New examples (if adding major features)
+- API changes (CHANGELOG.md)
 
-### 4. Commit
+#### Pull Request Process
 
-Utiliser des messages clairs:
+1. Update CHANGELOG.md with your changes
+2. Ensure all tests pass: `go test ./...`
+3. Check coverage: `go test -cover ./...`
+4. Verify code quality: `go vet ./...`
+5. Create a descriptive PR with:
+   - Clear title
+   - Description of changes
+   - Reference to related issues
+   - Any breaking changes noted
 
-```bash
-# ✅ Good commit messages
-git commit -m "feat: add Port direction filtering to Node"
-git commit -m "fix: handle EOF in POD parser correctly"
-git commit -m "docs: improve verbose logging documentation"
-git commit -m "test: add coverage for Object POD parsing"
-
-# ❌ Bad commit messages
-git commit -m "fixes"
-git commit -m "update stuff"
-git commit -m "WIP"
-```
-
-Format de message recommandé (conventional commits):
-```
-<type>(<scope>): <subject>
-
-<body>
-
-<footer>
-```
-
-Types:
-- `feat` - Nouvelle feature
-- `fix` - Bug fix
-- `docs` - Documentation
-- `test` - Tests
-- `perf` - Performance
-- `refactor` - Refactoring sans changement fonctionnel
-
-Exemple:
-
-```
-feat(client): add Node.GetMetadata() method
-
-Implement retrieving node metadata properties (channel positions, etc.)
-from the server. This allows audio routing clients to understand the
-channel layout of audio devices.
-
-Closes #123
-```
-
-### 5. Push et Pull Request
-
-```bash
-git push origin feature/ma-fonctionnalite
-```
-
-Ouvrir une PR sur GitHub avec:
-
-- **Description claire** - Qu'est-ce qui change et pourquoi
-- **Related issues** - Lier les issues avec "Closes #123"
-- **Testing instructions** - Comment tester le changement
-- **Screenshots/logs** - Si applicable (surtout pour verbose output)
-
-Template PR:
+Example PR description:
 
 ```markdown
 ## Description
-Brève description de ce que ce PR fait.
+Implements feature X to enable use case Y.
 
-## Related Issues
+## Changes
+- Added `NewFunction()` to client package
+- Updated `ExistingType` with new field
+- Added 12 tests covering new functionality
+
+## Testing
+- All tests pass locally
+- Coverage: 87% (was 85%)
+- Manual testing with real PipeWire: OK
+
+## Breaking Changes
+None
+
+## Closes
 Closes #123
-
-## How to Test
-1. Compile: `go build ./...`
-2. Run tests: `go test ./...`
-3. Check verbose output: `./example_basic_connect`
-
-## Checklist
-- [ ] Tests ajoutés/mis à jour
-- [ ] Documentation mise à jour
-- [ ] Code formaté (`go fmt`)
-- [ ] Zero CGO verified (`CGO_ENABLED=0 go build`)
-- [ ] No warnings with `go vet`
 ```
 
-## Areas for Contribution
+## Development Setup
 
-### High Priority (Phase 2)
+### Prerequisites
 
-- [ ] `client/client.go` - Main client API
-- [ ] `client/core.go` - Core proxy implementation
-- [ ] `client/registry.go` - Object registry
-- [ ] `client/node.go` - Audio node proxies
-- [ ] `client/port.go` - Port proxies
-- [ ] `client/link.go` - Link proxies
-- [ ] Unit tests for all above
-- [ ] Integration tests with real daemon
+- Go 1.21 or later
+- Git
+- Optional: golangci-lint for enhanced linting
 
-### Medium Priority (Phase 3)
-
-- [ ] Advanced POD parsing (Object, Array, Sequence)
-- [ ] Protocol message types (enums)
-- [ ] Permission handling
-- [ ] Session manager support
-
-### Low Priority (Phase 4+)
-
-- [ ] TUI client implementation
-- [ ] GUI client (GTK) implementation
-- [ ] Performance monitoring
-- [ ] Network bridging
-
-## Development Tools
-
-### Debugging
+### Setup
 
 ```bash
-# Set logger to debug level
-logger := verbose.NewLogger(verbose.LogLevelDebug, true)
+# Clone repository
+git clone https://github.com/vignemail1/pipewire-go.git
+cd pipewire-go
 
-# Run your code with verbose output
-./your-binary 2>&1 | tee debug.log
+# Install dependencies
+go mod download
 
-# Analyze with pw-cli for comparison
-pw-cli info core
-pw-cli ls -l
+# Run tests
+go test ./...
 
-# Monitor with strace
-strace -e trace=write,read ./your-binary
-
-# Monitor daemon
-pw-top
+# Install linter (optional)
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 ```
 
-### Testing Against Real Daemon
+## Project Structure
 
-```bash
-# Start daemon if not running
-systemctl --user start pipewire
-
-# Verify it's running
-pw-cli info core
-
-# Run integration tests
-go test -v ./client -integration
-
-# Clean up test artifacts
-./cleanup-test-sockets.sh
+```
+pipewire-go/
+├── client/           # Client API
+│   ├── *_test.go   # Client tests
+│   └── *.go        # Client implementation
+├── core/             # Protocol layer
+│   ├── *_test.go   # Core tests
+│   └── *.go        # Core implementation
+├── spa/              # SPA/POD serialization
+├── verbose/          # Logging
+├── examples/         # Working examples
+├── version.go        # Version management
+├── go.mod
+├── go.sum
+├── README.md
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+└── LICENSE
 ```
 
-### Profiling
+## Key Concepts
 
-```bash
-# CPU profile
-go test -cpuprofile=cpu.prof ./...
-go tool pprof cpu.prof
+### Nodes
+Represent audio devices or applications. Key properties:
+- Name, description, state
+- Sample rate, channel count
+- Parameters (format, latency, etc.)
 
-# Memory profile
-go test -memprofile=mem.prof ./...
-go tool pprof mem.prof
+### Ports
+Represent connection points on nodes. Key properties:
+- Direction (input/output)
+- Type (audio, MIDI, etc.)
+- Supported formats
+- Connection status
 
-# Trace
-go test -trace=trace.out ./...
-go tool trace trace.out
-```
+### Links
+Represent audio connections between ports. Properties:
+- Source and destination ports
+- Custom properties
 
-## Documentation Standards
+### Events
+Notifications of graph changes:
+- Node added/removed
+- Port added/removed/modified
+- Link created/destroyed
 
-### Godoc
+## Testing Guidelines
 
-Chaque export public doit avoir:
+### Unit Tests
+
+Test individual functions:
 
 ```go
-// Package name - brief description
-// 
-// This package provides ...
-// 
-// Example usage:
-//  
-//  client, _ := NewClient(socketPath)
-//  nodes := client.GetRegistry().ListNodes()
-//
-package client
-
-// TypeName - description (one liner)
-// 
-// More detailed explanation if needed.
-// Properties and methods listed below.
-type TypeName struct {
-    Field1 string // Description
-    Field2 uint32 // Description
-}
-
-// MethodName description
-// 
-// Additional details about behavior, error conditions, etc.
-func (t *TypeName) MethodName(arg Type) (Result, error) {
-    ...
+func TestNodeName(t *testing.T) {
+    node := &client.Node{}
+    node.Props = map[string]string{"node.name": "Test"}
+    
+    if node.Name() != "Test" {
+        t.Errorf("Expected 'Test', got '%s'", node.Name())
+    }
 }
 ```
 
-Générer la documentation:
+### Table-Driven Tests
 
-```bash
-godoc -http=:6060 &
-# Puis visiter http://localhost:6060
+For multiple scenarios:
+
+```go
+func TestPortDirection(t *testing.T) {
+    tests := []struct {
+        name      string
+        direction client.PortDirection
+        expected  string
+    }{
+        {"input", client.PortDirectionInput, "In"},
+        {"output", client.PortDirectionOutput, "Out"},
+    }
+    
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // Test code
+        })
+    }
+}
 ```
 
-### Examples
+### Integration Tests
 
-Chaque feature importante doit avoir un exemple compilable:
+Test against real PipeWire:
 
 ```bash
-examples/
-├── basic_connect.go      # ✅ Compilable et runnable
-├── list_devices.go
-└── audio_routing.go
-
-# Tous testables:
-go run ./examples/basic_connect.go
+# Run integration tests (skips if no daemon)
+go test -v -tags=integration ./...
 ```
 
-## Review Process
+## Performance Considerations
 
-Les PRs sont reviewés pour:
+When optimizing:
 
-1. **Correctness** - Le code fait-il ce qu'il prétend?
-2. **Testing** - Couverture suffisante?
-3. **Documentation** - Les APIs sont-elles documentées?
-4. **Style** - Suit-il les conventions?
-5. **Performance** - Y a-t-il des régressions?
-6. **Security** - Y a-t-il des problèmes de sécurité?
+1. Benchmark before and after: `go test -bench=. -benchmem`
+2. Profile with pprof for significant changes
+3. Document performance impact in PR
+4. Ensure thread-safety for concurrent access
 
-Les reviewers demanderont des changements si nécessaire. C'est normal, c'est du feedback constructif.
+## Documentation
 
-## Questions?
+### GoDoc Standards
 
-- **Issues** - Pour les bugs et features
-- **Discussions** - Pour les questions de design
-- **Documentation** - Consultez README.md et ARCHITECTURE.md
+All public types and functions must have:
+
+```go
+// GetNodes returns all nodes in the graph.
+// Returns empty slice if no nodes available.
+func (c *Client) GetNodes() []*Node {
+    // ...
+}
+```
+
+### README Updates
+
+Update README.md for:
+- New major features
+- API changes
+- Breaking changes
+- Important bug fixes
+
+### CHANGELOG Updates
+
+Update CHANGELOG.md following [Keep a Changelog](https://keepachangelog.com/) format:
+
+```markdown
+### Added
+- New feature description
+
+### Fixed
+- Bug fix description
+```
+
+## Release Process
+
+Releases are managed by maintainers:
+
+1. Update version in `version.go`
+2. Update CHANGELOG.md
+3. Create git tag: `git tag vX.Y.Z`
+4. Push: `git push origin vX.Y.Z`
+5. Create GitHub Release with changelog
+
+## Getting Help
+
+- Check [existing issues](https://github.com/vignemail1/pipewire-go/issues)
+- Ask in issue discussions
+- Review [examples](./examples/) for patterns
+- Check [PipeWire documentation](https://pipewire.org/)
 
 ## License
 
-En contribuant, vous acceptez que votre code soit sous licence MIT.
+By contributing, you agree that your contributions will be licensed under the MIT License.
 
----
+## Recognition
 
-Merci de contribuer à pipewire-go! 🎉
+All contributors will be recognized in the README contributors section.
+
+Thank you for contributing! 🙋

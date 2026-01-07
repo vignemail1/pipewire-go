@@ -338,7 +338,7 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Refresh graph
 		m.graphModel.Update(m.client)
 		m.status = "Graph refreshed"
-		result m, nil
+		return m, nil
 
 	case "1":
 		m.activeView = ViewTypeGraph
@@ -623,7 +623,7 @@ func (m *Model) renderPropertiesView() string {
 		link := m.graphModel.links[m.selectedLinkID]
 		if link != nil {
 			output += fmt.Sprintf("Link [%d]\n\n", link.ID)
-			output += fmt.Sprintf("  Status: %s\n", link.IsActive())
+			output += fmt.Sprintf("  Status: %v\n", link.IsActive())
 			if link.Output != nil {
 				output += fmt.Sprintf("  Source: %s\n", link.Output.Name)
 			}
@@ -685,7 +685,7 @@ func (m *Model) renderFooter() string {
 		footer += "d-delete | c-create | Ctrl+R-refresh"
 	}
 	if m.error != nil {
-		footer += " | ❌ " + m.error.Error()
+		footer += " | ✗ " + m.error.Error()
 	} else if m.status != "" {
 		footer += " | ✓ " + m.status
 	}

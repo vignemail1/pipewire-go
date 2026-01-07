@@ -21,7 +21,7 @@ func NewClient(socketPath string, logger *verbose.Logger) (*Client, error) {
 	logger.Infof("Client: Connecting to %s", socketPath)
 
 	// Connect to PipeWire daemon
-	conn, err := core.Dial(socketPath, logger)
+	connection, err := core.Dial(socketPath, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
@@ -29,55 +29,45 @@ func NewClient(socketPath string, logger *verbose.Logger) (*Client, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// ========================================================================
-	// NEW FOR ISSUE #5: Initialize protocol components
+	// Initialize protocol components and client structures
 	// ========================================================================
 	eventHandler := core.NewEventHandler()
-	if err != nil {
-		conn.Close()
-		cancel()
-		return nil, fmt.Errorf("failed to create event handler: %w", err)
-	}
 
 	client := &Client{
-		logger:    logger,
-		ctx:       ctx,
-		cancel:    cancel,
-		nodes:     make(map[uint32]*Node),
-		ports:     make(map[uint32]*Port),
-		links:     make(map[uint32]*Link),
-		done:      make(chan struct{}),
-		errors:    make(chan error, 10),
-		eventChan: make(chan Event, 100),
-		listeners: make(map[EventType][]EventListener),
-
-		mu:           sync.RWMutex,
-		connection:   conn,         // Unix socket connection
-		registryID:   1,            // Registry object ID
-		coreID:       0,            // Core object ID
-		eventHandler: eventHandler, // Event dispatcher
-		lastSequence: 0,            // Request sequence counter
-		dispatcher:   NewEventDispatcher(),
-	}
-
-	// Then after initializing, start the dispatcher:
-	if err := client.dispatcher.Start(); err != nil {
-		logger.Warnf("Failed to start dispatcher: %v", err)
+		logger:       logger,
+		ctx:          ctx,
+		cancel:       cancel,
+		nodes:        make(map[uint32]*Node),
+		ports:        make(map[uint32]*Port),
+		links:        make(map[uint32]*Link),
+		done:         make(chan struct{}),
+		errors:       make(chan error, 10),
+		eventChan:    make(chan Event, 100),
+		listeners:    make(map[EventType][]EventListener),
+		mu:           sync.RWMutex{},
+		connection:   connection,      // Unix socket connection to daemon
+		registryID:   1,               // Registry object ID
+		coreID:       0,               // Core object ID
+		eventHandler: eventHandler,    // Event handler for protocol events
+		lastSequence: 0,               // Request sequence counter
+		dispatcher:   NewEventDispatcher(), // Application event dispatcher
 	}
 
 	// Create Core proxy (id=0)
-	client.core = newCore(0, conn, logger)
+	client.core = newCore(0, connection, logger)
 
 	// Create Registry proxy (id=1)
-	client.registry = newRegistry(1, conn, logger)
+	client.registry = newRegistry(1, connection, logger)
 
 	logger.Infof("Client: Connected to PipeWire daemon")
 
-	// NEW FOR ISSUE #6: Start protocol event loop
+	// FIXED: Start protocol event loop with correct variable name
 	go func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		if err := c.connection.StartEventLoop(ctx); err != nil {
+		// Fixed: Use 'client' instead of undefined 'c'
+		if err := client.connection.StartEventLoop(ctx) {
 			logger.Errorf("Protocol event loop error: %v", err)
 		}
 	}()
@@ -86,7 +76,8 @@ func NewClient(socketPath string, logger *verbose.Logger) (*Client, error) {
 	ctxReady, cancelReady := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelReady()
 
-	if err := c.connection.WaitUntilReady(ctxReady); err != nil {
+	// Fixed: Use 'client' instead of undefined 'c'
+	if err := client.connection.WaitUntilReady(ctxReady); err != nil {
 		return nil, fmt.Errorf("connection not ready: %w", err)
 	}
 
@@ -97,42 +88,84 @@ func NewClient(socketPath string, logger *verbose.Logger) (*Client, error) {
 }
 
 // ============================================================================
-// Client STRUCT - COMPLETE WITH ISSUE #5 FIELDS
+// Client STRUCT - CONSOLIDATED AND COMPLETE
 // ============================================================================
 
 type Client struct {
-	// EXISTING FIELDS
-	conn      *core.Connection
-	logger    *verbose.Logger
-	ctx       context.Context
-	cancel    context.CancelFunc
-	nodes     map[uint32]*Node
-	ports     map[uint32]*Port
-	links     map[uint32]*Link
+	// Core logging and lifecycle
+	logger *verbose.Logger
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	// Data structures for storing PipeWire objects
+	nodes map[uint32]*Node
+	ports map[uint32]*Port
+	links map[uint32]*Link
+
+	// Event channels
 	done      chan struct{}
 	errors    chan error
 	eventChan chan Event
 	listeners map[EventType][]EventListener
 
+	// Proxy objects for Core and Registry
 	core     *coreProxy
 	registry *registryProxy
 
-	// ========================================================================
-	// NEW FIELDS FOR ISSUE #5
-	// ========================================================================
-	mu           sync.RWMutex       // Synchronization mutex
-	connection   *core.Connection   // Duplicate reference for protocol
+	// Protocol communication and synchronization
+	mu           sync.RWMutex       // Protects all fields below
+	connection   *core.Connection   // Unix socket connection to daemon (consolidated from 'conn')
 	registryID   uint32             // Registry object ID (1)
 	coreID       uint32             // Core object ID (0)
-	eventHandler *core.EventHandler // Event dispatcher
-	lastSequence uint32             // Last used sequence number
-
-	// NEW FOR ISSUE #6
-	dispatcher *EventDispatcher // Application event dispatcher
+	eventHandler *core.EventHandler // Protocol-level event handler
+	lastSequence uint32             // Sequence counter for protocol requests
+	dispatcher   *EventDispatcher   // Application-level event dispatcher
 }
 
 // ============================================================================
-// COMPLETE Close() METHOD - ISSUE #5 INTEGRATED
+// FIXED AND COMPLETE: eventLoop() METHOD - WAS MISSING
+// ============================================================================
+
+// eventLoop handles incoming events from PipeWire daemon
+func (c *Client) eventLoop() {
+	defer func() {
+		c.done <- struct{}{}
+	}()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			c.logger.Debugf("Event loop shutting down")
+			return
+
+		case event, ok := <-c.eventChan:
+			if !ok {
+				c.logger.Debugf("Event channel closed")
+				return
+			}
+
+			// Dispatch event to registered listeners
+			c.mu.RLock()
+			listeners := c.listeners[event.Type]
+			c.mu.RUnlock()
+
+			for _, listener := range listeners {
+				// Call listeners asynchronously to avoid blocking
+				go func(l EventListener, e Event) {
+					if err := l(e); err != nil {
+						c.logger.Warnf("Event listener error: %v", err)
+					}
+				}(listener, event)
+			}
+
+		case err := <-c.errors:
+			c.logger.Errorf("Client error: %v", err)
+		}
+	}
+}
+
+// ============================================================================
+// COMPLETE Close() METHOD - Properly cleanup all resources
 // ============================================================================
 
 func (c *Client) Close() error {
@@ -143,14 +176,14 @@ func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// NEW FOR ISSUE #6: Stop event dispatcher
+	// Stop event dispatcher
 	if c.dispatcher != nil {
 		if err := c.dispatcher.Stop(); err != nil {
 			c.logger.Warnf("Error stopping dispatcher: %v", err)
 		}
 	}
 
-	// NEW FOR ISSUE #6: Shutdown protocol connection
+	// Shutdown protocol connection
 	if c.connection != nil {
 		if err := c.connection.Shutdown(context.Background()); err != nil {
 			c.logger.Warnf("Error shutting down connection: %v", err)
@@ -163,6 +196,7 @@ func (c *Client) Close() error {
 	// Wait for event loop to finish
 	<-c.done
 
+	// Close the connection
 	if c.connection != nil {
 		return c.connection.Close()
 	}
@@ -170,7 +204,7 @@ func (c *Client) Close() error {
 }
 
 // ============================================================================
-// NEW HELPER METHODS FOR ISSUE #5
+// CONSOLIDATED HELPER METHODS - Access consolidated 'connection' field
 // ============================================================================
 
 // GetConnection returns the underlying connection to PipeWire daemon
@@ -267,24 +301,69 @@ func (c *Client) UnregisterEventListener(eventType EventType) {
 	}
 }
 
-// StartEventDispatcher starts the async event dispatcher
-func (c *Client) StartEventDispatcher() error {
-	if c.dispatcher == nil {
-		return fmt.Errorf("event dispatcher not initialized")
+// ============================================================================
+// COMPLETE GRAPH QUERY METHODS - ISSUE #5: New functionality
+// ============================================================================
+
+// GetNodes returns all loaded nodes from the audio graph
+func (c *Client) GetNodes() []*Node {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	nodes := make([]*Node, 0, len(c.nodes))
+	for _, node := range c.nodes {
+		nodes = append(nodes, node)
 	}
-	return c.dispatcher.Start()
+	return nodes
 }
 
-// StopEventDispatcher stops the async event dispatcher
-func (c *Client) StopEventDispatcher() error {
-	if c.dispatcher == nil {
-		return fmt.Errorf("event dispatcher not initialized")
+// GetPorts returns all loaded ports from the audio graph
+func (c *Client) GetPorts() []*Port {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	ports := make([]*Port, 0, len(c.ports))
+	for _, port := range c.ports {
+		ports = append(ports, port)
 	}
-	return c.dispatcher.Stop()
+	return ports
+}
+
+// GetLinks returns all active audio links in the graph
+func (c *Client) GetLinks() []*Link {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	links := make([]*Link, 0, len(c.links))
+	for _, link := range c.links {
+		links = append(links, link)
+	}
+	return links
+}
+
+// GetNodeByID finds a node by its ID
+func (c *Client) GetNodeByID(id uint32) *Node {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.nodes[id]
+}
+
+// GetPortByID finds a port by its ID
+func (c *Client) GetPortByID(id uint32) *Port {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ports[id]
+}
+
+// GetLinkByID finds a link by its ID
+func (c *Client) GetLinkByID(id uint32) *Link {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.links[id]
 }
 
 // ============================================================================
-// COMPLETE CreateLink() METHOD - ISSUE #5
+// COMPLETE CreateLink() METHOD
 // ============================================================================
 
 func (c *Client) CreateLink(output, input *Port, params *LinkParams) (*Link, error) {
@@ -303,7 +382,9 @@ func (c *Client) CreateLink(output, input *Port, params *LinkParams) (*Link, err
 
 	// Create Link object with ID returned by daemon
 	link := NewLink(linkID, input, output, c)
+	c.mu.Lock()
 	c.links[linkID] = link
+	c.mu.Unlock()
 
 	c.logger.Infof("Link created: %d (output=%d, input=%d)", linkID, output.ID(), input.ID())
 
@@ -311,7 +392,7 @@ func (c *Client) CreateLink(output, input *Port, params *LinkParams) (*Link, err
 }
 
 // ============================================================================
-// COMPLETE RemoveLink() METHOD - ISSUE #5
+// COMPLETE RemoveLink() METHOD
 // ============================================================================
 
 func (c *Client) RemoveLink(link *Link) error {
@@ -328,7 +409,9 @@ func (c *Client) RemoveLink(link *Link) error {
 	}
 
 	// Remove link from local registry
+	c.mu.Lock()
 	delete(c.links, link.ID())
+	c.mu.Unlock()
 
 	c.logger.Infof("Link removed: %d", link.ID())
 

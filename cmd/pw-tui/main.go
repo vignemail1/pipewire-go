@@ -5,10 +5,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/vignemail1/pipewire-go/client"
@@ -24,6 +26,9 @@ type Model struct {
 	routingMode bool
 	error       error
 	quit        bool
+	status      string
+	showHelp    bool
+	needsRefresh bool
 
 	// Screen dimensions
 	width  int
@@ -45,28 +50,29 @@ const (
 	ViewTypeDevices
 	ViewTypeConnections
 	ViewTypeProperties
+	ViewTypeHelp
 )
 
 // GraphModel represents the audio graph state
 type GraphModel struct {
-	nodes      map[uint32]*client.Node
-	ports      map[uint32]*client.Port
-	links      map[uint32]*client.Link
-	lastUpdate int64
-	selectedNode  uint32
-	selectedPort  uint32
-	selectedLink  uint32
+	nodes        map[uint32]*client.Node
+	ports        map[uint32]*client.Port
+	links        map[uint32]*client.Link
+	lastUpdate   int64
+	selectedNode uint32
+	selectedPort uint32
+	selectedLink uint32
 }
 
 // NewGraphModel creates a new graph model
 func NewGraphModel() *GraphModel {
 	return &GraphModel{
-		nodes:         make(map[uint32]*client.Node),
-		ports:         make(map[uint32]*client.Port),
-		links:         make(map[uint32]*client.Link),
-		selectedNode:  0,
-		selectedPort:  0,
-		selectedLink:  0,
+		nodes:        make(map[uint32]*client.Node),
+		ports:        make(map[uint32]*client.Port),
+		links:        make(map[uint32]*client.Link),
+		selectedNode: 0,
+		selectedPort: 0,
+		selectedLink: 0,
 	}
 }
 
@@ -90,6 +96,8 @@ func (gm *GraphModel) Update(c *client.Client) {
 	for _, link := range c.GetLinks() {
 		gm.links[link.ID] = link
 	}
+
+	gm.lastUpdate = time.Now().UnixNano()
 }
 
 // NewModel initializes the TUI model
@@ -100,26 +108,41 @@ func NewModel(socketPath string, logger *verbose.Logger) (*Model, error) {
 		return nil, err
 	}
 
+	// Wait for client to be ready
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := c.WaitUntilReady(ctx); err != nil {
+		c.Close()
+		return nil, fmt.Errorf("failed to connect to PipeWire: %w", err)
+	}
+
 	model := &Model{
-		client:        c,
-		logger:        logger,
-		activeView:    ViewTypeGraph,
-		graphModel:    NewGraphModel(),
-		routingMode:   false,
+		client:      c,
+		logger:      logger,
+		activeView:  ViewTypeGraph,
+		graphModel:  NewGraphModel(),
+		routingMode: false,
 		selectedIndex: 0,
-		width:         120,
-		height:        40,
+		width:       120,
+		height:      40,
+		status:      "Ready",
+		showHelp:    false,
 	}
 
 	// Update graph
 	model.graphModel.Update(c)
+	model.logger.Info("TUI initialized successfully")
 
 	return model, nil
 }
 
 // Init initializes the model
 func (m *Model) Init() tea.Cmd {
-	return nil
+	// Start periodic refresh ticker
+	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+		return GraphUpdateMsg{}
+	})
 }
 
 // Update handles messages
@@ -134,30 +157,138 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case GraphUpdateMsg:
+		// Periodic refresh
 		m.graphModel.Update(m.client)
-		return m, nil
+		m.status = fmt.Sprintf("Updated at %s", time.Now().Format("15:04:05"))
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return GraphUpdateMsg{}
+		})
 
 	case ErrorMsg:
 		m.error = msg.err
+		m.status = fmt.Sprintf("Error: %v", msg.err)
+		m.logger.Error(msg.err.Error())
+		return m, nil
+
+	case DeleteLinkMsg:
+		return m.handleDeleteLink(msg.linkID)
+
+	case CreateLinkMsg:
+		return m.handleCreateLink(msg.outputID, msg.inputID)
+
+	case HelpMsg:
+		m.showHelp = !m.showHelp
+		if m.showHelp {
+			m.activeView = ViewTypeHelp
+		} else {
+			m.activeView = ViewTypeGraph
+		}
 		return m, nil
 	}
 
 	return m, nil
 }
 
+// handleDeleteLink processes link deletion
+func (m *Model) handleDeleteLink(linkID uint32) (tea.Model, tea.Cmd) {
+	if linkID == 0 {
+		m.error = fmt.Errorf("invalid link ID")
+		return m, nil
+	}
+
+	m.status = "Deleting link..."
+	err := m.client.DestroyLink(linkID)
+	if err != nil {
+		m.error = fmt.Errorf("failed to delete link: %w", err)
+		m.status = "Delete failed"
+		m.logger.Error(m.error.Error())
+		return m, nil
+	}
+
+	// Refresh graph
+	m.graphModel.Update(m.client)
+	m.status = fmt.Sprintf("Link %d deleted successfully", linkID)
+	m.logger.Info(m.status)
+	m.selectedLinkID = 0
+
+	return m, nil
+}
+
+// handleCreateLink processes link creation
+func (m *Model) handleCreateLink(sourcePortID, sinkPortID uint32) (tea.Model, tea.Cmd) {
+	if sourcePortID == 0 || sinkPortID == 0 {
+		m.error = fmt.Errorf("invalid port selection")
+		m.status = "Invalid port selection"
+		return m, nil
+	}
+
+	sourcePort := m.graphModel.ports[sourcePortID]
+	sinkPort := m.graphModel.ports[sinkPortID]
+
+	if sourcePort == nil || sinkPort == nil {
+		m.error = fmt.Errorf("port not found")
+		m.status = "Port not found"
+		return m, nil
+	}
+
+	m.status = "Creating link..."
+	link, err := m.client.CreateLink(sourcePort, sinkPort, nil)
+	if err != nil {
+		m.error = fmt.Errorf("failed to create link: %w", err)
+		m.status = "Link creation failed"
+		m.logger.Error(m.error.Error())
+		return m, nil
+	}
+
+	// Refresh graph
+	m.graphModel.Update(m.client)
+	m.status = fmt.Sprintf("Link %d created successfully", link.ID())
+	m.logger.Info(m.status)
+	m.selectedPortID = 0
+	m.routingMode = false
+
+	return m, nil
+}
+
 // handleKeyPress processes keyboard input
 func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// If showing help, only allow quit or exit help
+	if m.showHelp {
+		switch msg.String() {
+		case "q", "ctrl+c", "?", "esc":
+			m.showHelp = false
+			m.activeView = ViewTypeGraph
+			return m, nil
+		}
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "q", "ctrl+c":
 		m.quit = true
+		m.logger.Info("Exiting TUI")
 		return m, tea.Quit
 
 	case "?":
-		return m, showHelp()
+		m.showHelp = true
+		m.activeView = ViewTypeHelp
+		return m, nil
 
 	case "tab":
 		// Switch view
-		m.activeView = (m.activeView + 1) % 5
+		if m.activeView < ViewTypeHelp {
+			m.activeView = (m.activeView + 1) % ViewTypeHelp
+		}
+		m.selectedIndex = 0
+		return m, nil
+
+	case "shift+tab":
+		// Switch view backwards
+		if m.activeView == 0 {
+			m.activeView = ViewTypeHelp - 1
+		} else {
+			m.activeView--
+		}
 		m.selectedIndex = 0
 		return m, nil
 
@@ -180,24 +311,34 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		// Toggle routing mode
 		m.routingMode = !m.routingMode
+		if m.routingMode {
+			m.status = "Routing mode ON - select ports to connect"
+			m.logger.Info("Routing mode enabled")
+		} else {
+			m.status = "Routing mode OFF"
+			m.logger.Info("Routing mode disabled")
+		}
 		return m, nil
 
 	case "d":
 		// Delete selected link
 		if m.activeView == ViewTypeConnections && m.selectedLinkID > 0 {
-			return m, deleteLink(m.selectedLinkID)
+			m.status = fmt.Sprintf("Deleting link %d...", m.selectedLinkID)
+			return m, deleteLink(m, m.selectedLinkID)
 		}
 
 	case "c":
 		// Create link (in routing mode)
 		if m.routingMode && m.selectedPortID > 0 {
-			return m, createLink()
+			// This would need a second selection - for now just show status
+			m.status = fmt.Sprintf("Source port selected: %d - select sink port", m.selectedPortID)
 		}
 
 	case "ctrl+r":
 		// Refresh graph
 		m.graphModel.Update(m.client)
-		return m, nil
+		m.status = "Graph refreshed"
+		result m, nil
 
 	case "1":
 		m.activeView = ViewTypeGraph
@@ -243,6 +384,7 @@ func (m *Model) handleSelect() (tea.Model, tea.Cmd) {
 		for _, node := range m.graphModel.nodes {
 			if idx == m.selectedIndex {
 				m.selectedNodeID = node.ID
+				m.status = fmt.Sprintf("Selected node: %s (ID: %d)", node.Name(), node.ID)
 				break
 			}
 			idx++
@@ -254,6 +396,7 @@ func (m *Model) handleSelect() (tea.Model, tea.Cmd) {
 		for _, link := range m.graphModel.links {
 			if idx == m.selectedIndex {
 				m.selectedLinkID = link.ID
+				m.status = fmt.Sprintf("Selected link: %d", link.ID)
 				break
 			}
 			idx++
@@ -283,6 +426,8 @@ func (m *Model) View() string {
 		content = m.renderConnectionsView()
 	case ViewTypeProperties:
 		content = m.renderPropertiesView()
+	case ViewTypeHelp:
+		content = m.renderHelpView()
 	default:
 		content = "Unknown view"
 	}
@@ -297,12 +442,18 @@ func (m *Model) View() string {
 func (m *Model) renderHeader() string {
 	status := "Ready"
 	if m.routingMode {
-		status = "Routing Mode"
+		status = "🔄 Routing Mode"
+	}
+
+	viewNames := []string{"Graph", "Devices", "Connections", "Properties", "Help"}
+	viewName := "Unknown"
+	if m.activeView < ViewType(len(viewNames)) {
+		viewName = viewNames[m.activeView]
 	}
 
 	return fmt.Sprintf(
 		"PipeWire Audio Graph TUI  [%s]  %s",
-		[]string{"Graph", "Devices", "Connections", "Properties", "Unused"}[m.activeView],
+		viewName,
 		status,
 	)
 }
@@ -312,13 +463,20 @@ func (m *Model) renderGraphView() string {
 	output := "AUDIO GRAPH\n"
 	output += "═" + repeatString("═", m.width-1) + "\n\n"
 
+	if len(m.graphModel.nodes) == 0 {
+		output += "No audio nodes connected\n"
+		return output
+	}
+
 	// Group nodes by direction
 	var inputs, outputs []*client.Node
 	for _, node := range m.graphModel.nodes {
-		if node.GetDirection() == client.NodeDirectionCapture {
-			inputs = append(inputs, node)
-		} else {
+		state := node.GetState()
+		if state == "running" {
+			// Assume outputs are running nodes unless explicitly input
 			outputs = append(outputs, node)
+		} else {
+			inputs = append(inputs, node)
 		}
 	}
 
@@ -359,6 +517,11 @@ func (m *Model) renderDevicesView() string {
 	output := "AUDIO DEVICES\n"
 	output += "═" + repeatString("═", m.width-1) + "\n\n"
 
+	if len(m.graphModel.nodes) == 0 {
+		output += "No audio devices\n"
+		return output
+	}
+
 	idx := 0
 	for _, node := range m.graphModel.nodes {
 		selected := ""
@@ -367,7 +530,14 @@ func (m *Model) renderDevicesView() string {
 		}
 
 		output += fmt.Sprintf("%s[%2d] %s\n", selected, node.ID, node.Name())
-		output += fmt.Sprintf("      Class: %s\n", node.info.MediaClass)
+
+		// Use GetProperties() for device class instead of unexposed info field
+		if props := node.GetProperties(); props != nil {
+			if class, ok := props["media.class"]; ok {
+				output += fmt.Sprintf("      Class: %s\n", class)
+			}
+		}
+
 		output += fmt.Sprintf("      State: %s\n", node.GetState())
 
 		if sr := node.GetSampleRate(); sr > 0 {
@@ -446,17 +616,78 @@ func (m *Model) renderPropertiesView() string {
 			for k, v := range node.GetProperties() {
 				output += fmt.Sprintf("  %s = %s\n", k, v)
 			}
+		} else {
+			output += "Node not found\n"
 		}
+	} else if m.selectedLinkID > 0 {
+		link := m.graphModel.links[m.selectedLinkID]
+		if link != nil {
+			output += fmt.Sprintf("Link [%d]\n\n", link.ID)
+			output += fmt.Sprintf("  Status: %s\n", link.IsActive())
+			if link.Output != nil {
+				output += fmt.Sprintf("  Source: %s\n", link.Output.Name)
+			}
+			if link.Input != nil {
+				output += fmt.Sprintf("  Sink: %s\n", link.Input.Name)
+			}
+		} else {
+			output += "Link not found\n"
+		}
+	} else {
+		output += "No item selected\n"
 	}
+
+	return output
+}
+
+// renderHelpView renders the help view
+func (m *Model) renderHelpView() string {
+	output := "PIPEWIRE AUDIO GRAPH TUI - HELP\n"
+	output += "═" + repeatString("═", m.width-1) + "\n\n"
+
+	output += "NAVIGATION:\n"
+	output += "  ↑/↓              Navigate up/down\n"
+	output += "  Tab/Shift+Tab    Switch views\n"
+	output += "  1/2/3            Quick view (Graph/Devices/Connections)\n\n"
+
+	output += "ACTIONS:\n"
+	output += "  Enter            Select item\n"
+	output += "  r                Toggle routing mode\n"
+	output += "  c                Create link (select ports)\n"
+	output += "  d                Delete selected link\n"
+	output += "  Ctrl+R           Refresh graph\n\n"
+
+	output += "GENERAL:\n"
+	output += "  ?                Toggle help\n"
+	output += "  q/Ctrl+C         Quit\n\n"
+
+	output += "VIEWS:\n"
+	output += "  Graph            Audio graph visualization\n"
+	output += "  Devices          Audio devices and ports\n"
+	output += "  Connections      Audio links/connections\n"
+	output += "  Properties       Details of selected item\n\n"
+
+	output += "ROUTING MODE:\n"
+	output += "  Enable with 'r' key to switch between audio ports\n"
+	output += "  Select source and sink ports to create connections\n\n"
+
+	output += "Press ? or Esc to close help\n"
 
 	return output
 }
 
 // renderFooter renders the footer with help text
 func (m *Model) renderFooter() string {
-	footer := "Keys: q-quit | ↑↓-navigate | Enter-select | Tab-view | Ctrl+R-refresh | ?: help"
+	footer := "Keys: q-quit | ↑↓-navigate | Tab-view | ?: help | "
+	if m.routingMode {
+		footer += "[ROUTING]"
+	} else {
+		footer += "d-delete | c-create | Ctrl+R-refresh"
+	}
 	if m.error != nil {
-		footer += " | Error: " + m.error.Error()
+		footer += " | ❌ " + m.error.Error()
+	} else if m.status != "" {
+		footer += " | ✓ " + m.status
 	}
 	return footer
 }
@@ -473,24 +704,32 @@ type CreateLinkMsg struct {
 	outputID uint32
 	inputID  uint32
 }
+type HelpMsg struct{}
 
 // Commands
 func showHelp() tea.Cmd {
-	return nil
+	return func() tea.Msg {
+		return HelpMsg{}
+	}
 }
 
-func deleteLink(linkID uint32) tea.Cmd {
+func deleteLink(m *Model, linkID uint32) tea.Cmd {
 	return func() tea.Msg {
 		return DeleteLinkMsg{linkID: linkID}
 	}
 }
 
-func createLink() tea.Cmd {
-	return nil
+func createLink(m *Model, sourceID, sinkID uint32) tea.Cmd {
+	return func() tea.Msg {
+		return CreateLinkMsg{outputID: sourceID, inputID: sinkID}
+	}
 }
 
 // Utility function
 func repeatString(s string, count int) string {
+	if count <= 0 {
+		return ""
+	}
 	result := ""
 	for i := 0; i < count; i++ {
 		result += s
@@ -501,7 +740,7 @@ func repeatString(s string, count int) string {
 // Main entry point
 func main() {
 	var (
-		socketPath = flag.String("socket", "/run/pipewire-0", "PipeWire socket path")
+		socketPath = flag.String("socket", "/run/user/1000/pipewire-0", "PipeWire socket path")
 		verbose_   = flag.Bool("v", false, "Verbose output")
 	)
 	flag.Parse()
@@ -527,4 +766,5 @@ func main() {
 
 	// Cleanup
 	model.client.Close()
+	logger.Info("TUI closed")
 }

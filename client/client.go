@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/vignemail1/pipewire-go/core"
 	"github.com/vignemail1/pipewire-go/verbose"
@@ -49,12 +50,18 @@ func NewClient(socketPath string, logger *verbose.Logger) (*Client, error) {
 		eventChan: make(chan Event, 100),
 		listeners: make(map[EventType][]EventListener),
 
-		mu:              sync.RWMutex,
-		connection:      conn,           // Unix socket connection
-		registryID:      1,              // Registry object ID
-		coreID:          0,              // Core object ID
-		eventHandler:    eventHandler,   // Event dispatcher
-		lastSequence:    0,              // Request sequence counter
+		mu:           sync.RWMutex,
+		connection:   conn,         // Unix socket connection
+		registryID:   1,            // Registry object ID
+		coreID:       0,            // Core object ID
+		eventHandler: eventHandler, // Event dispatcher
+		lastSequence: 0,            // Request sequence counter
+		dispatcher:   NewEventDispatcher(),
+	}
+
+	// Then after initializing, start the dispatcher:
+	if err := client.dispatcher.Start(); err != nil {
+		logger.Warnf("Failed to start dispatcher: %v", err)
 	}
 
 	// Create Core proxy (id=0)
@@ -65,23 +72,25 @@ func NewClient(socketPath string, logger *verbose.Logger) (*Client, error) {
 
 	logger.Infof("Client: Connected to PipeWire daemon")
 
-	// ========================================================================
-	// NEW FOR ISSUE #5: Register event handlers with dispatcher
-	// ========================================================================
-	// These handlers will be called by EventHandler when events arrive
-	eventHandler.RegisterEventHandler(client.registryID, func(event core.Event) error {
-		logger.Debugf("Registry event received: %v", event)
-		// Event will be dispatched to appropriate handlers
-		return nil
-	})
+	// NEW FOR ISSUE #6: Start protocol event loop
+	go func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 
-	eventHandler.RegisterEventHandler(client.coreID, func(event core.Event) error {
-		logger.Debugf("Core event received: %v", event)
-		// Event will be dispatched to appropriate handlers
-		return nil
-	})
+		if err := c.connection.StartEventLoop(ctx); err != nil {
+			logger.Errorf("Protocol event loop error: %v", err)
+		}
+	}()
 
-	// Start event loop
+	// Wait for connection to be ready
+	ctxReady, cancelReady := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelReady()
+
+	if err := c.connection.WaitUntilReady(ctxReady); err != nil {
+		return nil, fmt.Errorf("connection not ready: %w", err)
+	}
+
+	// Start application event loop
 	go client.eventLoop()
 
 	return client, nil
@@ -111,12 +120,15 @@ type Client struct {
 	// ========================================================================
 	// NEW FIELDS FOR ISSUE #5
 	// ========================================================================
-	mu              sync.RWMutex                    // Synchronization mutex
-	connection      *core.Connection                // Duplicate reference for protocol
-	registryID      uint32                          // Registry object ID (1)
-	coreID          uint32                          // Core object ID (0)
-	eventHandler    *core.EventHandler              // Event dispatcher
-	lastSequence    uint32                          // Last used sequence number
+	mu           sync.RWMutex       // Synchronization mutex
+	connection   *core.Connection   // Duplicate reference for protocol
+	registryID   uint32             // Registry object ID (1)
+	coreID       uint32             // Core object ID (0)
+	eventHandler *core.EventHandler // Event dispatcher
+	lastSequence uint32             // Last used sequence number
+
+	// NEW FOR ISSUE #6
+	dispatcher *EventDispatcher // Application event dispatcher
 }
 
 // ============================================================================
@@ -131,17 +143,29 @@ func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// NEW FOR ISSUE #6: Stop event dispatcher
+	if c.dispatcher != nil {
+		if err := c.dispatcher.Stop(); err != nil {
+			c.logger.Warnf("Error stopping dispatcher: %v", err)
+		}
+	}
+
+	// NEW FOR ISSUE #6: Shutdown protocol connection
+	if c.connection != nil {
+		if err := c.connection.Shutdown(context.Background()); err != nil {
+			c.logger.Warnf("Error shutting down connection: %v", err)
+		}
+	}
+
 	// Signal event loop to stop
 	c.cancel()
 
 	// Wait for event loop to finish
 	<-c.done
 
-	// Close connection to daemon
 	if c.connection != nil {
 		return c.connection.Close()
 	}
-
 	return nil
 }
 
@@ -202,6 +226,61 @@ func (c *Client) GetNextSequence() uint32 {
 		return c.lastSequence
 	}
 	return 0
+}
+
+// IsReady returns true if the connection is ready for communication
+func (c *Client) IsReady() bool {
+	if c == nil || c.connection == nil {
+		return false
+	}
+	return c.connection.GetState() == core.StateReady
+}
+
+// WaitUntilReady waits for the connection to be ready
+func (c *Client) WaitUntilReady(ctx context.Context) error {
+	if c == nil || c.connection == nil {
+		return fmt.Errorf("client not initialized")
+	}
+	return c.connection.WaitUntilReady(ctx)
+}
+
+// GetConnectionState returns the current protocol connection state
+func (c *Client) GetConnectionState() core.State {
+	if c == nil || c.connection == nil {
+		return core.StateDisconnected
+	}
+	return c.connection.GetState()
+}
+
+// RegisterEventListener registers an application-level event listener
+func (c *Client) RegisterEventListener(eventType EventType, listener EventListener) error {
+	if c.dispatcher == nil {
+		return fmt.Errorf("event dispatcher not initialized")
+	}
+	return c.dispatcher.RegisterListener(eventType, listener)
+}
+
+// UnregisterEventListener removes event listeners for a type
+func (c *Client) UnregisterEventListener(eventType EventType) {
+	if c.dispatcher != nil {
+		c.dispatcher.UnregisterListener(eventType)
+	}
+}
+
+// StartEventDispatcher starts the async event dispatcher
+func (c *Client) StartEventDispatcher() error {
+	if c.dispatcher == nil {
+		return fmt.Errorf("event dispatcher not initialized")
+	}
+	return c.dispatcher.Start()
+}
+
+// StopEventDispatcher stops the async event dispatcher
+func (c *Client) StopEventDispatcher() error {
+	if c.dispatcher == nil {
+		return fmt.Errorf("event dispatcher not initialized")
+	}
+	return c.dispatcher.Stop()
 }
 
 // ============================================================================

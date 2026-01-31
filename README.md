@@ -7,6 +7,8 @@
 
 A comprehensive Go library for interacting with [PipeWire](https://pipewire.org/) audio and media server.
 
+⚠️ Fully vide coded project, not tested at all. Just to test IA model capabilities. ⚠️
+
 ## Features
 
 - **Audio Graph Control** - Enumerate nodes, ports, and links
